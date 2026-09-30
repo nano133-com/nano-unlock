@@ -187,13 +187,20 @@ shortcode and a block) and checks:
 - the settings page refuses a mistyped address and lists sales;
 - the block loads in the editor with no warnings or script errors.
 
+## Releases
+
+Pushing a tag `v*` (for example `v0.1.0`) runs `.github/workflows/release.yml`:
+it runs PHPUnit and PHPCS, builds `nano-unlock.zip` from the `nano-unlock/`
+folder only (no tests, tools or dev files), checks that the zip holds the
+plugin's main file and nothing else, and attaches it to a GitHub release for
+that tag. The version in the tag must match `Version:` in `nano-unlock.php`.
+
 ## WordPress Playground
 
-`blueprint.json` sets up a demo: it installs the plugin from a zip URL,
-sets an address and creates a sample post. Replace `NANO_UNLOCK_ZIP_URL`
-with the address of a published `nano-unlock.zip`, and
-`NANO_UNLOCK_DEMO_ADDRESS` with a Nano address whose wallet you hold
-(payments go there for real), then open:
+`blueprint.json` sets up a demo: it installs the plugin from the latest
+GitHub release (`nano-unlock.zip`), sets Wes's address as the payee, and
+creates a sample post. It needs a published release (see Releases below) and
+a repository that Playground can download from. Open:
 
 ```
 https://playground.wordpress.net/#<the blueprint JSON, URL-encoded>

@@ -19,7 +19,7 @@
       "step": "installPlugin",
       "pluginData": {
         "resource": "url",
-        "url": "NANO_UNLOCK_ZIP_URL"
+        "url": "https://github.com/nano133-com/nano-unlock/releases/latest/download/nano-unlock.zip"
       },
       "options": {
         "activate": true
@@ -29,7 +29,7 @@
       "step": "setSiteOptions",
       "options": {
         "nano_unlock_settings": {
-          "address": "NANO_UNLOCK_DEMO_ADDRESS",
+          "address": "nano_1kennndirjduamcam3tsomhxrifoqg7xiomq4haypzhoqrx4kywczux5sbbc",
           "usd": "0.01",
           "node": "https://node.nano133.com/rpc",
           "node2": ""

@@ -1,0 +1,53 @@
+name: Release
+
+# On a v* tag: test, build nano-unlock.zip from the plugin folder only, and attach it to the release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "7.4"
+          tools: composer:v2
+          coverage: none
+
+      - name: Install the dev tools
+        run: composer install --no-interaction --no-progress
+
+      - name: Unit tests
+        run: vendor/bin/phpunit
+
+      - name: Coding standards
+        run: vendor/bin/phpcs -q
+
+      - name: The tag matches the plugin's version
+        run: |
+          version=$(sed -n 's/^ \* Version: *//p' nano-unlock/nano-unlock.php | tr -d '[:space:]')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME but nano-unlock.php says Version: $version" >&2
+            exit 1
+          fi
+
+      - name: Build nano-unlock.zip
+        run: |
+          zip -qr nano-unlock.zip nano-unlock -x '*.DS_Store'
+          unzip -l nano-unlock.zip
+          # Only the plugin folder: every entry is under nano-unlock/, and the main file is there.
+          if unzip -Z1 nano-unlock.zip | grep -v '^nano-unlock/'; then echo "files outside nano-unlock/" >&2; exit 1; fi
+          unzip -Z1 nano-unlock.zip | grep -qx 'nano-unlock/nano-unlock.php'
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Nano Unlock $GITHUB_REF_NAME" --notes "Install: Plugins → Add New → Upload Plugin → nano-unlock.zip."
+          gh release upload "$GITHUB_REF_NAME" nano-unlock.zip --clobber
