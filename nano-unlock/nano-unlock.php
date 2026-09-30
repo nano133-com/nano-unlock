@@ -32,6 +32,7 @@ require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock-limit.php';
 require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock-store.php';
 require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock-payments.php';
 require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock-settings.php';
+require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock-parts.php';
 require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock-render.php';
 require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock-rest.php';
 require_once NANO_UNLOCK_DIR . 'includes/class-nano-unlock.php';

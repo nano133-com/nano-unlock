@@ -36,6 +36,7 @@ final class Nano_Unlock {
 	 */
 	public static function init() {
 		Nano_Unlock_Settings::init();
+		Nano_Unlock_Parts::init();
 		Nano_Unlock_Render::init();
 		Nano_Unlock_Rest::init();
 		add_action( 'nano_unlock_prune', array( __CLASS__, 'prune' ) );
@@ -48,6 +49,7 @@ final class Nano_Unlock {
 	public static function activate() {
 		Nano_Unlock_Store::install();
 		self::secret();
+		Nano_Unlock_Parts::migrate();
 		if ( ! wp_next_scheduled( 'nano_unlock_prune' ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'nano_unlock_prune' );
 		}

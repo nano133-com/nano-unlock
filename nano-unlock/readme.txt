@@ -16,7 +16,7 @@ Wrap the paid part of a post in the "Nano Unlock (paid part)" block, or in `[nan
 
 * The money goes straight to your Nano address. The plugin never holds a key or funds.
 * No account, no card, no fee: a 1¢ sale pays you 1¢.
-* The paid part is rendered on the server only after payment. It is never hidden with CSS.
+* The paid part is rendered on the server only after payment. It is never hidden with CSS, and it is stored apart from the post, so feeds, search, revisions and a deactivated plugin never show it.
 * Your site verifies each payment itself with a Nano node (the default is node.nano133.com; any node works, and a second node can be required to agree).
 * One payment unlocks one item, once. The buyer keeps access on that browser through a signed cookie.
 
@@ -24,7 +24,11 @@ Wrap the paid part of a post in the "Nano Unlock (paid part)" block, or in `[nan
 
 = What happens if I deactivate the plugin? =
 
-WordPress then shows the paid parts to everyone. Remove or unpublish the paid parts before you deactivate it.
+The paid parts stay hidden. They are stored apart from the post's content, so WordPress shows only the shortcode's tag (and nothing for the block). Turn the plugin on again and everything works as before, including buyers' access.
+
+= What happens if I delete the plugin? =
+
+Its data is kept (paid parts, sales, settings) unless you tick "Also delete the paid parts" on the settings page first.
 
 = Does it work with page caching? =
 

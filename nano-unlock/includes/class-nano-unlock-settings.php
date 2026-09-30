@@ -25,10 +25,11 @@ final class Nano_Unlock_Settings {
 		$saved = get_option( self::OPTION, array() );
 		return array_merge(
 			array(
-				'address' => '',
-				'usd'     => '0.05',
-				'node'    => self::DEFAULT_NODE,
-				'node2'   => '',
+				'address'     => '',
+				'usd'         => '0.05',
+				'node'        => self::DEFAULT_NODE,
+				'node2'       => '',
+				'delete_data' => false,
 			),
 			is_array( $saved ) ? $saved : array()
 		);
@@ -135,10 +136,11 @@ final class Nano_Unlock_Settings {
 		);
 		add_settings_section( 'nano_unlock_main', '', '__return_false', 'nano-unlock' );
 		$fields = array(
-			'address' => __( 'Your Nano address', 'nano-unlock' ),
-			'usd'     => __( 'Default price (USD)', 'nano-unlock' ),
-			'node'    => __( 'Node RPC URL', 'nano-unlock' ),
-			'node2'   => __( 'Second node (optional)', 'nano-unlock' ),
+			'address'     => __( 'Your Nano address', 'nano-unlock' ),
+			'usd'         => __( 'Default price (USD)', 'nano-unlock' ),
+			'node'        => __( 'Node RPC URL', 'nano-unlock' ),
+			'node2'       => __( 'Second node (optional)', 'nano-unlock' ),
+			'delete_data' => __( 'When the plugin is deleted', 'nano-unlock' ),
 		);
 		foreach ( $fields as $key => $label ) {
 			add_settings_field(
@@ -194,6 +196,7 @@ final class Nano_Unlock_Settings {
 				add_settings_error( self::OPTION, $key, __( 'A node URL must start with https:// (or http://). The old URL is kept.', 'nano-unlock' ) );
 			}
 		}
+		$out['delete_data'] = ! empty( $input['delete_data'] );
 		if ( $out['node2'] === $out['node'] ) {
 			$out['node2'] = '';
 		}
@@ -235,9 +238,19 @@ final class Nano_Unlock_Settings {
 	 * @param array $args The field's key.
 	 */
 	public static function field( $args ) {
-		$s           = self::get();
-		$key         = $args['key'];
-		$name        = self::OPTION . '[' . $key . ']';
+		$s    = self::get();
+		$key  = $args['key'];
+		$name = self::OPTION . '[' . $key . ']';
+		if ( 'delete_data' === $key ) {
+			printf(
+				'<label><input type="checkbox" id="nano_unlock_delete_data" name="%1$s" value="1" %2$s /> %3$s</label><p class="description">%4$s</p>',
+				esc_attr( $name ),
+				checked( ! empty( $s['delete_data'] ), true, false ),
+				esc_html__( 'Also delete the paid parts of every post, the sales and these settings', 'nano-unlock' ),
+				esc_html__( 'Off: deleting the plugin keeps everything, and the paid parts stay hidden (they are stored apart from the posts). Turning the plugin off never deletes anything.', 'nano-unlock' )
+			);
+			return;
+		}
 		$help        = array(
 			'address' => __( 'Readers pay this address directly. The plugin never holds a key or any money.', 'nano-unlock' ),
 			'usd'     => __( 'Used when a paid part names no price. Readers pay the same value in XNO at the current rate.', 'nano-unlock' ),

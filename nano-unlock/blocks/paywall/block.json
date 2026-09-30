@@ -10,7 +10,8 @@
   "textdomain": "nano-unlock",
   "attributes": {
     "price": { "type": "string", "default": "" },
-    "itemId": { "type": "string", "default": "" }
+    "itemId": { "type": "string", "default": "" },
+    "partId": { "type": "string", "default": "" }
   },
   "supports": { "html": false, "reusable": false },
   "editorScript": "file:./index.js",

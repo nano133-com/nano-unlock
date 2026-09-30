@@ -28,6 +28,14 @@ const BUYER2 = addr("buyer 2");
 const wp = (...args) => execFileSync("npx", ["wp-env", "run", "cli", "--", "wp", ...args], { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
 const mock = async (path, body) => (await fetch(MOCK + path, { method: body ? "POST" : "GET", body: body ? JSON.stringify(body) : undefined })).json();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// A page's HTML. Apache closes idle keep-alive connections while wp-cli runs, so one retry.
+const page$ = async (url) => {
+  try {
+    return await (await fetch(url)).text();
+  } catch {
+    return (await fetch(url)).text();
+  }
+};
 
 let failures = 0;
 const check = (ok, msg) => {
@@ -59,6 +67,7 @@ try {
 }
 process.on("exit", () => {
   try {
+    wp("plugin", "activate", "nano-unlock");
     wp("option", "delete", "nano_unlock_e2e");
     if (saved) wp("option", "update", "nano_unlock_settings", saved, "--format=json");
     else wp("option", "delete", "nano_unlock_settings");
@@ -271,6 +280,34 @@ check(refused.status === 503 || refused.status === 400, `a checkout against a te
 const lockedTest = await (await fetch(urlA)).text();
 check(!lockedTest.includes("data-nano-unlock-offer=") && !lockedTest.includes("nano-unlock__button"), "readers get no Unlock button while a test node is set");
 wp("option", "update", "nano_unlock_e2e", "1");
+// ---- 7. The plugin turned off, then on again ----------------------------------------------------------
+console.log("\n— the plugin turned off");
+check(!wp("post", "get", postA, "--field=post_content").includes(SECRET_A) && !wp("post", "get", postB, "--field=post_content").includes(SECRET_B), "the posts' stored content holds no paid text");
+wp("plugin", "deactivate", "nano-unlock");
+const off = [await page$(urlA), await page$(urlB), await page$(`${SITE}/?feed=rss2`), await page$(`${SITE}/?rest_route=/wp/v2/posts/${postA}`), await page$(`${SITE}/?rest_route=/wp/v2/posts/${postB}`), await page$(`${SITE}/?s=writer`), await page$(`${SITE}/?s=story`)];
+check(off.every((h) => !h.includes(SECRET_A) && !h.includes(SECRET_B)), "turned off: no paid text in the pages, the feed, the REST API or search");
+check(off[0].includes("[nano_unlock") && !off[1].includes("nano-unlock"), "turned off: the shortcode shows only its tag, and the block shows nothing");
+const offFriend = await browser.newContext();
+const ofp = await offFriend.newPage();
+await ofp.goto(urlA);
+check(!(await ofp.content()).includes(SECRET_A), "turned off: a browser sees no paid text either");
+await offFriend.close();
+wp("plugin", "activate", "nano-unlock");
+console.log("\n— the plugin on again");
+await page.goto(urlA);
+check((await page.content()).includes(SECRET_A), "on again: the buyer's receipt still unlocks the part");
+const again = await browser.newContext();
+const agp = await again.newPage();
+await agp.goto(urlA);
+check(!(await agp.content()).includes(SECRET_A) && (await agp.locator(".nano-unlock__button").count()) === 1, "on again: a new reader sees the paywall and the Unlock button");
+await agp.locator(".nano-unlock__button").click();
+await agp.locator(".nano-unlock__pay").waitFor();
+const amountAgain = /amount=(\d+)/.exec((await agp.locator(".nano-unlock__open").getAttribute("href")) ?? "")?.[1] ?? "";
+await mock("/__pay", { to: SITE_ADDR, amount: amountAgain, from: BUYER2 });
+await agp.waitForURL(/nano_unlocked=/, { timeout: 15000 });
+check((await agp.content()).includes(SECRET_A), "on again: a new payment unlocks it");
+await again.close();
+
 // The block in the editor: it loads, with no "unsupported block" warning and no script errors.
 const errors = [];
 ap.on("pageerror", (e) => errors.push(e.message));
@@ -281,6 +318,7 @@ await ap.keyboard.press("Escape");
 const guide = ap.locator(".components-modal__screen-overlay button[aria-label='Close']");
 if (await guide.count()) await guide.first().click();
 check((await canvas.locator(".nano-unlock-editor__label").textContent())?.includes("$0.05"), "the editor shows the block with its price");
+check((await canvas.locator(".wp-block-nano-unlock-paywall").innerText()).includes("the end of a story"), "the editor shows the stored paid part inside the block");
 check((await canvas.locator(".block-editor-warning").count()) === 0 && errors.length === 0, `no block warning and no script errors in the editor (${errors.join("; ")})`);
 await canvas.locator(".wp-block-nano-unlock-paywall p").last().click();
 await ap.waitForTimeout(800);

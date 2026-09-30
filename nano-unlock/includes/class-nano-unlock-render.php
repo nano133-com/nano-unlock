@@ -98,15 +98,19 @@ final class Nano_Unlock_Render {
 			array(
 				'price' => '',
 				'id'    => '',
+				'part'  => '',
 			),
 			$atts,
 			'nano_unlock'
 		);
+		$part = (string) $atts['part'];
 		return self::render(
 			(string) $atts['price'],
 			(string) $atts['id'],
-			function () use ( $content ) {
-				return do_shortcode( (string) $content );
+			function () use ( $content, $part ) {
+				// The paid text is stored in post meta (see Nano_Unlock_Parts); inline text is from before that.
+				$stored = '' !== $part ? Nano_Unlock_Parts::get( (int) get_the_ID(), $part ) : null;
+				return do_shortcode( null !== $stored ? $stored : (string) $content );
 			}
 		);
 	}
@@ -122,8 +126,9 @@ final class Nano_Unlock_Render {
 		return self::render(
 			isset( $attributes['price'] ) ? (string) $attributes['price'] : '',
 			isset( $attributes['itemId'] ) ? (string) $attributes['itemId'] : '',
-			function () use ( $content ) {
-				return (string) $content;
+			function () use ( $attributes, $content ) {
+				$stored = isset( $attributes['partId'] ) ? Nano_Unlock_Parts::get( (int) get_the_ID(), (string) $attributes['partId'] ) : null;
+				return null !== $stored ? do_blocks( $stored ) : (string) $content;
 			}
 		);
 	}

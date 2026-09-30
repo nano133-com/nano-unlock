@@ -95,6 +95,19 @@ the paid part with a dashed border and a note, so they can check it.
    lasts 30 days (filter `nano_unlock_receipt_seconds`). The page reloads with
    the paid part.
 
+### Where the paid parts are stored
+
+A paid part is never kept in the post's content. On every save, the plugin
+moves each paid part into its own protected post meta entry
+(`_nano_unlock_part_<id>`), and the post keeps only a self-closing block
+(`<!-- wp:nano-unlock/paywall {"partId":"…"} /-->`) or a self-closing
+`[nano_unlock … part="…"]`. When a post is opened for editing (the block
+editor's REST request in the edit context, or the classic editor), the plugin
+puts the parts back inside their blocks, so authors edit them as usual; the
+next save moves them out again. Existing posts with inline paid parts are
+moved on activation or update (once; running it again changes nothing, and
+it doesn't change the posts' modified time).
+
 The paid part is only ever rendered on the server, and only for a request
 with a valid receipt (or from someone who can edit the post). It is not in
 the HTML before payment, not in feeds, not in excerpts, and not in the core
@@ -133,9 +146,16 @@ node.
 
 ### Limits to know
 
-- **Deactivating the plugin shows the paid parts to everyone.** WordPress
-  then prints the block's inner content and the shortcode's text as they
-  are. To stop selling, remove or unpublish the paid parts first.
+- **Turning the plugin off hides the paid parts.** WordPress drops the
+  unknown block and prints only the shortcode's tag (for example
+  `[nano_unlock price="0.05" part="…"]`), never the paid text. Turning it on
+  again restores the paywall, and buyers' receipts still work.
+- **Deleting the plugin keeps its data** (the paid parts, the sales, the
+  settings and the key) unless "Also delete the paid parts…" is ticked on
+  the settings page.
+- Paid parts have no revision history: revisions and autosaves keep only
+  the free text. A save that doesn't carry a part's content (an autosave, or
+  a tool that doesn't load it) keeps the stored text for that part.
 - A receipt is a cookie for one browser. Anyone who copies the cookie out of
   that browser gets the same access until it expires. There is no "restore
   on another device" in this version.
@@ -152,6 +172,7 @@ composer install
 npm start          # wp-env on http://localhost:8888 (admin / password), copies the plugin in
 npm run sync       # copy the plugin into wp-env again after a change
 npm test           # PHPUnit: amounts, receipts and offers, addresses, the payment rules
+npm run test:wp    # integration tests inside WordPress: paid-part storage, migration, uninstall
 npm run lint       # PHPCS with the WordPress Coding Standards and PHPCompatibilityWP
 npm run e2e        # end-to-end test against a MOCK node (no real network, no real money)
 npm run e2e -- --shots <folder>   # the same, with screenshots

@@ -17,3 +17,8 @@ mkdir -p "$P/WordPress/wp-content/mu-plugins"
 rm -f "$P/WordPress/wp-content/mu-plugins/nano-unlock-e2e.php"
 cp e2e/mu-plugins/nano-unlock-e2e.php "$P/WordPress/wp-content/mu-plugins/"
 echo "synced to $P"
+# The integration tests that run inside WordPress (npm run test:wp).
+for site in WordPress tests-WordPress; do
+  rm -rf "$P/$site/wp-content/nano-unlock-tests"
+  cp -R e2e/wp-tests "$P/$site/wp-content/nano-unlock-tests"
+done

@@ -8,7 +8,8 @@
     "test": "vendor/bin/phpunit",
     "lint": "vendor/bin/phpcs",
     "e2e": "sh e2e/sync.sh && node e2e/run.mjs",
-    "zip": "rm -f nano-unlock.zip && zip -qr nano-unlock.zip nano-unlock -x '*.DS_Store'"
+    "zip": "rm -f nano-unlock.zip && zip -qr nano-unlock.zip nano-unlock -x '*.DS_Store'",
+    "test:wp": "sh e2e/sync.sh && wp-env run cli -- wp eval-file wp-content/nano-unlock-tests/parts-test.php && wp-env run tests-cli -- wp eval-file wp-content/nano-unlock-tests/uninstall-test.php"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
