@@ -156,6 +156,8 @@ node.
 - Paid parts have no revision history: revisions and autosaves keep only
   the free text. A save that doesn't carry a part's content (an autosave, or
   a tool that doesn't load it) keeps the stored text for that part.
+- A preview of unsaved changes shows the stored paid text, not the unsaved
+  edits to it (a preview of a published post comes from its autosave).
 - A receipt is a cookie for one browser. Anyone who copies the cookie out of
   that browser gets the same access until it expires. There is no "restore
   on another device" in this version.
