@@ -132,6 +132,9 @@
 			wrap.appendChild( qrLink );
 
 			var info = node( 'div', 'nano-unlock__info' );
+			if ( c.test ) {
+				info.appendChild( node( 'p', 'nano-unlock__test', t.test ) );
+			}
 			info.appendChild( node( 'p', 'nano-unlock__label', t.pay ) );
 			var price = node( 'p', 'nano-unlock__price', 'Ӿ' + c.xnoShort );
 			price.appendChild( node( 'small', '', ' ≈ $' + c.usd ) );

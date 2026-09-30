@@ -182,3 +182,12 @@
 .nano-unlock [hidden] {
 	display: none !important;
 }
+
+.nano-unlock__test {
+	margin: 10px 0;
+	padding: 6px 10px;
+	border-radius: 6px;
+	background: #b32d2e;
+	color: #fff;
+	font-weight: 700;
+}

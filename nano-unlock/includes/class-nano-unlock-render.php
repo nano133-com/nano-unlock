@@ -220,6 +220,9 @@ final class Nano_Unlock_Render {
 			self::enqueue();
 		}
 		$html .= '><div class="nano-unlock__head"><span class="nano-unlock__mark" aria-hidden="true">Ӿ</span><strong>' . esc_html__( 'The rest of this is paid', 'nano-unlock' ) . '</strong></div>';
+		if ( Nano_Unlock_Settings::ready() && Nano_Unlock_Settings::test_mode() ) {
+			$html .= '<p class="nano-unlock__test">' . esc_html__( 'TEST MODE: this site uses a test node. Do not send real money.', 'nano-unlock' ) . '</p>';
+		}
 		if ( Nano_Unlock_Settings::ready() ) {
 			$html .= '<p class="nano-unlock__text">'
 				/* translators: %s: the price in dollars. */
@@ -266,6 +269,7 @@ final class Nano_Unlock_Render {
 					'exact'    => __( 'Send the exact amount, from a wallet you control. The last digits identify your payment.', 'nano-unlock' ),
 					'left'     => __( 'left', 'nano-unlock' ),
 					'cancel'   => __( 'Cancel', 'nano-unlock' ),
+					'test'     => __( 'TEST MODE: do not send real money. This site uses a test node.', 'nano-unlock' ),
 				),
 			)
 		);

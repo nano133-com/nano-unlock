@@ -40,7 +40,57 @@ final class Nano_Unlock_Settings {
 	 * @return bool
 	 */
 	public static function ready() {
-		return Nano_Unlock_Address::is_valid( self::get()['address'] );
+		return Nano_Unlock_Address::is_valid( self::get()['address'] ) && ( ! self::test_mode() || self::test_allowed() );
+	}
+
+	/**
+	 * Whether a node set on this page is a test node: not https, or a local or private host.
+	 * A test node can't see real payments, so a reader's real money would be sent and never unlock anything.
+	 *
+	 * @return bool
+	 */
+	public static function test_mode() {
+		$s = self::get();
+		return self::is_test_node( $s['node'] ) || ( '' !== $s['node2'] && self::is_test_node( $s['node2'] ) );
+	}
+
+	/**
+	 * Whether a test helper allows checkouts against a test node (the plugin's own end-to-end test does).
+	 *
+	 * @return bool
+	 */
+	public static function test_allowed() {
+		/**
+		 * Filters whether checkouts may start while a test node is set. Never enable it on a site that sells.
+		 *
+		 * @param bool $allowed False.
+		 */
+		return (bool) apply_filters( 'nano_unlock_allow_test_node', false );
+	}
+
+	/**
+	 * Whether $url is a test node rather than a public https node.
+	 *
+	 * @param string $url The node URL.
+	 * @return bool
+	 */
+	public static function is_test_node( $url ) {
+		if ( 'https' !== wp_parse_url( $url, PHP_URL_SCHEME ) ) {
+			return true;
+		}
+		$host = strtolower( trim( (string) wp_parse_url( $url, PHP_URL_HOST ), '[]' ) );
+		if ( '' === $host || ( false === strpos( $host, '.' ) && false === strpos( $host, ':' ) ) ) {
+			return true;
+		}
+		if ( filter_var( $host, FILTER_VALIDATE_IP ) ) {
+			return ! filter_var( $host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE );
+		}
+		foreach ( array( '.localhost', '.local', '.internal', '.test', '.invalid', '.example', '.lan', '.home.arpa' ) as $suffix ) {
+			if ( substr( '.' . $host, -strlen( $suffix ) ) === $suffix ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -225,7 +275,18 @@ final class Nano_Unlock_Settings {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Nano Unlock', 'nano-unlock' ); ?></h1>
 			<p><?php esc_html_e( 'Sell part of a post for a few cents in Nano (XNO). Wrap the paid part in the "Nano Unlock" block, or in [nano_unlock price="0.05"] … [/nano_unlock].', 'nano-unlock' ); ?></p>
-			<?php if ( ! self::ready() ) : ?>
+			<?php if ( self::test_mode() ) : ?>
+				<div class="notice notice-error inline"><p><strong><?php esc_html_e( 'Test node: real payments will not be seen.', 'nano-unlock' ); ?></strong>
+				<?php
+				echo esc_html(
+					self::test_allowed()
+						? __( 'A test helper allows checkouts anyway. Do not send real money to this site.', 'nano-unlock' )
+						: __( 'A node above is not a public https node, so checkouts are refused. Set a public node (the default is fine) to sell.', 'nano-unlock' )
+				);
+				?>
+				</p></div>
+			<?php endif; ?>
+			<?php if ( ! Nano_Unlock_Address::is_valid( self::get()['address'] ) ) : ?>
 				<div class="notice notice-warning inline"><p><?php esc_html_e( 'Add your Nano address to start selling. Until then, readers see the paid parts as "not for sale yet".', 'nano-unlock' ); ?></p></div>
 			<?php endif; ?>
 			<form action="options.php" method="post">

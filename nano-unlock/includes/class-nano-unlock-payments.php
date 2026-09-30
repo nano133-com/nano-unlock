@@ -99,7 +99,7 @@ final class Nano_Unlock_Payments {
 			array(
 				'action'    => 'receivable',
 				'account'   => $address,
-				'count'     => '100',
+				'count'     => '50', // The most the node.nano133.com gateway allows.
 				'threshold' => $threshold,
 				'source'    => 'true',
 			)

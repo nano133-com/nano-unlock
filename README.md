@@ -29,6 +29,14 @@ the site verifies payments itself, in PHP).
 | Node RPC URL | The node that proves payments. Default: `https://node.nano133.com/rpc`. Any Nano node RPC works (your own node, or a public one). |
 | Second node (optional) | If set, a payment counts only when **both** nodes confirm the same send. |
 
+**Test nodes are refused.** A node that is not a public `https` node (plain
+`http`, `localhost`, a private IP, `host.docker.internal`, `*.local`, a name
+without a dot) can't see real payments. With such a node, the settings page
+shows a red "Test node" notice, readers get no Unlock button, and the
+checkout endpoint refuses to start. Only the plugin's own end-to-end test
+turns this off (filter `nano_unlock_allow_test_node`), and then every
+checkout shows "TEST MODE: do not send real money".
+
 The settings page also lists the latest sales (post, price, amount, payer and
 block).
 
@@ -73,7 +81,8 @@ the paid part with a dashed border and a note, so they can check it.
 3. **The check.** The page asks `POST /wp-json/nano-unlock/v1/claim` every
    two seconds. The site asks the node for the address's receivable sends
    and its recent history (a wallet may already have received the payment),
-   and looks for the exact amount. A match is only a candidate: the site
+   and looks for the exact amount (at most 50 entries each: the most the
+   node.nano133.com gateway allows). A match is only a candidate: the site
    then reads that send block with `block_info` and accepts it only when it
    is a **confirmed send** of **exactly** that amount **to your address**,
    first seen **after the checkout started**. With a second node, both must
@@ -152,6 +161,11 @@ npm run zip        # nano-unlock.zip
 `npm run sync` exists because on this Docker Desktop the nested bind mount
 that wp-env normally uses for a plugin folder came up empty after container
 restarts. Copying the folder is reliable.
+
+**The end-to-end test uses addresses that have no key** (`e2e/address.php`
+hashes a label into a public key; no private key exists). Money sent to them
+is lost. The test saves the site's settings first and puts them back when it
+ends, and the test-node check above keeps readers from paying while it runs.
 
 The end-to-end test starts `e2e/mock-node.php` (an in-memory ledger on port
 8787), points the plugin at it through `host.docker.internal`, fixes the

@@ -49,8 +49,29 @@ for (let i = 0; i < 50; i++) {
 
 // ---- The site -------------------------------------------------------------------------------------
 console.log("setting up the site…");
+// The site's own settings are saved here and put back when the test ends, however it ends:
+// the test's address has no key, so the dev site must never be left pointing at it.
+let saved = null;
+try {
+  saved = wp("option", "get", "nano_unlock_settings", "--format=json");
+} catch {
+  saved = null;
+}
+process.on("exit", () => {
+  try {
+    wp("option", "delete", "nano_unlock_e2e");
+    if (saved) wp("option", "update", "nano_unlock_settings", saved, "--format=json");
+    else wp("option", "delete", "nano_unlock_settings");
+    wp("transient", "delete", "--all");
+    console.log("restored the site's own settings");
+  } catch (e) {
+    console.log(`COULD NOT RESTORE THE SETTINGS: ${e.message}`);
+  }
+});
+process.on("SIGINT", () => process.exit(130));
 wp("option", "update", "nano_unlock_settings", JSON.stringify({ address: SITE_ADDR, usd: "0.05", node: "http://host.docker.internal:8787", node2: "" }), "--format=json");
-wp("option", "update", "nano_unlock_e2e_rate", "0.5");
+// Lets checkouts start against the mock node, and fixes the rate at $0.50 (e2e/mu-plugins).
+wp("option", "update", "nano_unlock_e2e", "1");
 wp("db", "query", "DELETE FROM wp_nano_unlock_checkouts");
 wp("transient", "delete", "--all");
 for (const id of wp("post", "list", "--post_type=post", "--meta_key=_nano_unlock_e2e", "--format=ids").split(/\s+/).filter(Boolean)) wp("post", "delete", id, "--force");
@@ -239,6 +260,17 @@ check((await ap.locator(".notice-error, .error").first().textContent())?.include
 check((await ap.inputValue("#nano_unlock_address")) === SITE_ADDR, "and the old address is kept");
 await ap.goto(urlA);
 check((await ap.content()).includes(SECRET_A) && (await ap.locator(".nano-unlock--preview").count()) === 1, "an editor sees the paid part, marked as a preview");
+
+// A test node without the test helper: a red notice, and no checkout can start.
+wp("option", "delete", "nano_unlock_e2e");
+await ap.goto(`${SITE}/wp-admin/options-general.php?page=nano-unlock`);
+check((await ap.locator(".notice-error").first().textContent())?.includes("Test node: real payments will not be seen"), "a test node shows a red notice on the settings page");
+if (SHOTS) await ap.screenshot({ path: join(SHOTS, "6-test-node-notice.png") });
+const refused = await api("checkout", { offer: /data-nano-unlock-offer="([^"]+)"/.exec(await (await fetch(urlB)).text())?.[1] ?? offer });
+check(refused.status === 503 || refused.status === 400, `a checkout against a test node is refused (${refused.status})`);
+const lockedTest = await (await fetch(urlA)).text();
+check(!lockedTest.includes("data-nano-unlock-offer=") && !lockedTest.includes("nano-unlock__button"), "readers get no Unlock button while a test node is set");
+wp("option", "update", "nano_unlock_e2e", "1");
 // The block in the editor: it loads, with no "unsupported block" warning and no script errors.
 const errors = [];
 ap.on("pageerror", (e) => errors.push(e.message));

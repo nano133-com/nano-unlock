@@ -78,6 +78,11 @@ if ( $state['down'] ) {
 	reply( array( 'error' => 'bad gateway' ), 502 );
 }
 
+// The node.nano133.com gateway refuses lists longer than 50.
+if ( isset( $body['count'] ) && ( ! ctype_digit( (string) $body['count'] ) || (int) $body['count'] > 50 ) ) {
+	reply( array( 'error' => 'missing or invalid field: count' ), 400 );
+}
+
 switch ( $action ) {
 	case 'receivable':
 		$blocks = array();

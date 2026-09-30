@@ -89,7 +89,12 @@ final class Nano_Unlock_Rest {
 		}
 		$settings = Nano_Unlock_Settings::get();
 		if ( ! Nano_Unlock_Settings::ready() ) {
-			return self::error( 503, __( 'This site is not set up to sell yet.', 'nano-unlock' ) );
+			return self::error(
+				503,
+				Nano_Unlock_Settings::test_mode()
+					? __( 'This site uses a test node, so it cannot see real payments. Nothing was charged: do not pay.', 'nano-unlock' )
+					: __( 'This site is not set up to sell yet.', 'nano-unlock' )
+			);
 		}
 		$offer = Nano_Unlock::tokens()->verify( 'offer', $request->get_param( 'offer' ) );
 		if ( ! $offer || ! isset( $offer['p'], $offer['s'], $offer['u'], $offer['m'] ) ) {
@@ -139,6 +144,7 @@ final class Nano_Unlock_Rest {
 				'address'   => $row['address'],
 				'uri'       => 'nano:' . $row['address'] . '?amount=' . $row['amount'],
 				'expiresAt' => (int) $row['expires_at'],
+				'test'      => Nano_Unlock_Settings::test_mode(),
 				'now'       => $now,
 			)
 		);
