@@ -1,0 +1,20 @@
+{
+  "name": "nano133/nano-unlock-dev",
+  "description": "Development tools for the Nano Unlock WordPress plugin.",
+  "type": "project",
+  "license": "GPL-2.0-or-later",
+  "require-dev": {
+    "phpunit/phpunit": "^9.6",
+    "wp-coding-standards/wpcs": "^3.1",
+    "phpcompatibility/phpcompatibility-wp": "^2.1",
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0"
+  },
+  "config": {
+    "platform": { "php": "7.4.33" },
+    "allow-plugins": { "dealerdirect/phpcodesniffer-composer-installer": true }
+  },
+  "scripts": {
+    "test": "phpunit",
+    "lint": "phpcs"
+  }
+}

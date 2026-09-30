@@ -1,0 +1,18 @@
+{
+  "name": "nano133-wp",
+  "private": true,
+  "scripts": {
+    "start": "wp-env start && sh e2e/sync.sh && wp-env run cli wp plugin activate nano-unlock",
+    "stop": "wp-env stop",
+    "sync": "sh e2e/sync.sh",
+    "test": "vendor/bin/phpunit",
+    "lint": "vendor/bin/phpcs",
+    "e2e": "sh e2e/sync.sh && node e2e/run.mjs",
+    "zip": "rm -f nano-unlock.zip && zip -qr nano-unlock.zip nano-unlock -x '*.DS_Store'"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@wordpress/env": "^11.16.0",
+    "qrcode-generator": "^2.0.4"
+  }
+}

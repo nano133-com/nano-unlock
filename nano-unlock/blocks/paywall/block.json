@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "nano-unlock/paywall",
+  "title": "Nano Unlock (paid part)",
+  "category": "text",
+  "icon": "lock",
+  "description": "Readers pay a few cents in Nano (XNO) to read what is inside. The paid part never reaches the browser before payment.",
+  "keywords": ["paywall", "nano", "xno", "pay"],
+  "textdomain": "nano-unlock",
+  "attributes": {
+    "price": { "type": "string", "default": "" },
+    "itemId": { "type": "string", "default": "" }
+  },
+  "supports": { "html": false, "reusable": false },
+  "editorScript": "file:./index.js",
+  "editorStyle": "file:./editor.css"
+}

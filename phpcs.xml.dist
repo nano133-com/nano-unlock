@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<ruleset name="Nano Unlock">
+	<description>WordPress Coding Standards for the Nano Unlock plugin.</description>
+
+	<file>nano-unlock</file>
+	<exclude-pattern>nano-unlock/assets/vendor/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+	<arg name="colors"/>
+
+	<config name="minimum_wp_version" value="6.3"/>
+	<config name="testVersion" value="7.4-"/>
+
+	<rule ref="WordPress"/>
+
+	<!-- index.asset.php is the block editor's standard name for a script's dependency list. -->
+	<rule ref="WordPress.Files.FileName.InvalidClassFileName">
+		<exclude-pattern>nano-unlock/nano-unlock.php</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Files.FileName.NotHyphenatedLowercase">
+		<exclude-pattern>*/index.asset.php</exclude-pattern>
+	</rule>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="nano-unlock"/>
+			</property>
+		</properties>
+	</rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="nano_unlock"/>
+				<element value="Nano_Unlock"/>
+				<element value="NANO_UNLOCK"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

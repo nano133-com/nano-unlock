@@ -1,0 +1,44 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "meta": {
+    "title": "Nano Unlock demo",
+    "description": "Sell part of a post for a few cents in Nano (XNO).",
+    "author": "nano133"
+  },
+  "preferredVersions": {
+    "php": "8.3",
+    "wp": "latest"
+  },
+  "features": {
+    "networking": true
+  },
+  "landingPage": "/?name=nano-unlock-demo",
+  "login": false,
+  "steps": [
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "url",
+        "url": "NANO_UNLOCK_ZIP_URL"
+      },
+      "options": {
+        "activate": true
+      }
+    },
+    {
+      "step": "setSiteOptions",
+      "options": {
+        "nano_unlock_settings": {
+          "address": "NANO_UNLOCK_DEMO_ADDRESS",
+          "usd": "0.01",
+          "node": "https://node.nano133.com/rpc",
+          "node2": ""
+        }
+      }
+    },
+    {
+      "step": "wp-cli",
+      "command": "wp post create --post_type=post --post_status=publish --post_name=nano-unlock-demo --post_title='How Nano confirms in under a second' --post_content='<!-- wp:paragraph --><p>Nano sends value between two accounts in under a second, with no fee. This first part is free.</p><!-- /wp:paragraph --><!-- wp:nano-unlock/paywall {\"price\":\"0.01\"} --><!-- wp:paragraph --><p>The paid part: every Nano account has its own chain of blocks, so a one-cent sale pays the writer the full cent.</p><!-- /wp:paragraph --><!-- /wp:nano-unlock/paywall -->'"
+    }
+  ]
+}

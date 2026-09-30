@@ -1,0 +1,7 @@
+node_modules/
+vendor/
+.phpunit.result.cache
+e2e/.state/
+e2e/test-results/
+*.zip
+.DS_Store

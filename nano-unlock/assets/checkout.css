@@ -1,0 +1,184 @@
+/* Nano Unlock: the locked box and the checkout. Colours follow the theme's text; the accent is Nano teal. */
+
+.nano-unlock {
+	--nano-unlock-accent: #1f9d8a;
+	--nano-unlock-accent-dark: #147466;
+	--nano-unlock-line: rgba(127, 127, 127, 0.3);
+	margin: 1.5em 0;
+}
+
+.nano-unlock--locked {
+	border: 1px solid var(--nano-unlock-line);
+	border-radius: 12px;
+	padding: 20px 22px;
+	background: linear-gradient(180deg, rgba(31, 157, 138, 0.08), rgba(31, 157, 138, 0.02));
+}
+
+.nano-unlock__head {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 1.1em;
+}
+
+.nano-unlock__mark {
+	display: inline-grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	background: var(--nano-unlock-accent);
+	color: #fff;
+	font-weight: 700;
+	flex: none;
+}
+
+.nano-unlock__text {
+	margin: 10px 0 14px;
+}
+
+.nano-unlock__button,
+.nano-unlock__open {
+	display: inline-block;
+	border: 0;
+	border-radius: 999px;
+	padding: 10px 22px;
+	background: var(--nano-unlock-accent);
+	color: #fff;
+	font: inherit;
+	font-weight: 600;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.nano-unlock__button:hover,
+.nano-unlock__open:hover,
+.nano-unlock__button:focus-visible,
+.nano-unlock__open:focus-visible {
+	background: var(--nano-unlock-accent-dark);
+	color: #fff;
+}
+
+.nano-unlock__button[disabled] {
+	opacity: 0.7;
+	cursor: progress;
+}
+
+.nano-unlock__pay {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 20px;
+	align-items: flex-start;
+}
+
+.nano-unlock__qr img {
+	display: block;
+	width: 200px;
+	height: 200px;
+	background: #fff;
+	border-radius: 8px;
+	image-rendering: pixelated;
+}
+
+.nano-unlock__info {
+	flex: 1 1 260px;
+	min-width: 0;
+}
+
+.nano-unlock__label {
+	margin: 0;
+	font-size: 0.85em;
+	opacity: 0.75;
+}
+
+.nano-unlock__price {
+	margin: 2px 0 12px;
+	font-size: 1.8em;
+	font-weight: 700;
+	line-height: 1.1;
+}
+
+.nano-unlock__price small {
+	font-size: 0.5em;
+	font-weight: 400;
+	opacity: 0.75;
+}
+
+.nano-unlock__fields {
+	margin: 14px 0 0;
+	font-size: 0.85em;
+}
+
+.nano-unlock__fields dt {
+	opacity: 0.75;
+	margin-top: 6px;
+}
+
+.nano-unlock__fields dd {
+	margin: 2px 0 0;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.nano-unlock__fields code {
+	overflow-wrap: anywhere;
+	font-size: 0.95em;
+}
+
+.nano-unlock__copy,
+.nano-unlock__cancel {
+	border: 1px solid var(--nano-unlock-line);
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: 0.85em;
+	padding: 2px 8px;
+	cursor: pointer;
+	flex: none;
+}
+
+.nano-unlock__hint {
+	font-size: 0.8em;
+	opacity: 0.75;
+	margin: 10px 0 0;
+}
+
+.nano-unlock__status {
+	margin: 12px 0 8px;
+	font-weight: 600;
+	color: var(--nano-unlock-accent-dark);
+}
+
+.nano-unlock__error {
+	margin: 12px 0 0;
+	color: #b32d2e;
+	font-weight: 600;
+}
+
+.nano-unlock__note {
+	font-size: 0.8em;
+	opacity: 0.7;
+	margin: 0.5em 0 0;
+}
+
+.nano-unlock--paid {
+	border-left: 3px solid var(--nano-unlock-accent);
+	padding-left: 16px;
+}
+
+.nano-unlock--preview {
+	border: 2px dashed var(--nano-unlock-accent);
+	border-radius: 8px;
+	padding: 8px 16px;
+}
+
+.nano-unlock--preview > .nano-unlock__note:first-child {
+	margin: 0 0 0.5em;
+}
+
+/* Themes style buttons with display rules that beat the hidden attribute. */
+.nano-unlock [hidden] {
+	display: none !important;
+}

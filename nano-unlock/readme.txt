@@ -1,0 +1,36 @@
+=== Nano Unlock ===
+Contributors: nano133
+Tags: paywall, micropayments, nano, xno, pay per post
+Requires at least: 6.3
+Tested up to: 7.1
+Requires PHP: 7.4
+Stable tag: 0.1.0
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+
+Sell part of a post for a few cents in Nano (XNO). Readers pay your address directly; your site checks the payment with a Nano node.
+
+== Description ==
+
+Wrap the paid part of a post in the "Nano Unlock (paid part)" block, or in `[nano_unlock price="0.05"] … [/nano_unlock]`. Readers see the price and an Unlock button, pay by QR code or "Open in wallet", and the part appears about two seconds after the payment confirms.
+
+* The money goes straight to your Nano address. The plugin never holds a key or funds.
+* No account, no card, no fee: a 1¢ sale pays you 1¢.
+* The paid part is rendered on the server only after payment. It is never hidden with CSS.
+* Your site verifies each payment itself with a Nano node (the default is node.nano133.com; any node works, and a second node can be required to agree).
+* One payment unlocks one item, once. The buyer keeps access on that browser through a signed cookie.
+
+== Frequently Asked Questions ==
+
+= What happens if I deactivate the plugin? =
+
+WordPress then shows the paid parts to everyone. Remove or unpublish the paid parts before you deactivate it.
+
+= Does it work with page caching? =
+
+Pages with a paid part send no-cache headers and set DONOTCACHEPAGE.
+
+== Changelog ==
+
+= 0.1.0 =
+* First version: settings, shortcode, block, checkout, verification on the site, receipts.

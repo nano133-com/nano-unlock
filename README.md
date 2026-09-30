@@ -1,0 +1,191 @@
+# Nano Unlock for WordPress
+
+Sell part of a post for a few cents in Nano (XNO). The reader pays **your own
+Nano address** directly, and **your site** checks the payment with a Nano
+node. There is no account, no card, no middleman and no service to sign up
+for. The plugin never holds a key or any money.
+
+This repository holds the plugin (`nano-unlock/`) and its development tools.
+It is based on the Ӿ Unlock prototype on nano133.com (option A of the design:
+the site verifies payments itself, in PHP).
+
+- WordPress 6.3 or newer (tested on 6.8 and 7.1), PHP 7.4 or newer (tested on 7.4 and 8.3).
+- No PHP extension beyond the WordPress defaults: amounts are handled as
+  decimal strings, and the address checksum uses a small BLAKE2b in plain PHP.
+
+## Install
+
+1. Build the zip: `npm run zip` (or zip the `nano-unlock/` folder).
+2. In WordPress: **Plugins → Add New → Upload Plugin**, choose
+   `nano-unlock.zip`, then **Activate**.
+3. Go to **Settings → Nano Unlock** and enter your Nano address.
+
+## Settings
+
+| Setting | What it does |
+|---|---|
+| Your Nano address | Readers pay this address. It must be a valid `nano_` address: the last 8 characters are a checksum, so a typo is refused and the old value is kept. |
+| Default price (USD) | Used when a paid part names no price. $0.01 to $1000. |
+| Node RPC URL | The node that proves payments. Default: `https://node.nano133.com/rpc`. Any Nano node RPC works (your own node, or a public one). |
+| Second node (optional) | If set, a payment counts only when **both** nodes confirm the same send. |
+
+The settings page also lists the latest sales (post, price, amount, payer and
+block).
+
+## Selling a part of a post
+
+**Block editor:** add the **Nano Unlock (paid part)** block and put the paid
+content inside it. Set the price in the block's sidebar (empty = the default
+price).
+
+**Shortcode** (classic editor, or a Shortcode block):
+
+```
+[nano_unlock price="0.05"]
+The paid part: text, images, other blocks or shortcodes.
+[/nano_unlock]
+```
+
+An optional `id` (block: "Item ID") names the item, for example
+`[nano_unlock id="recipe" price="0.10"]`. Without it, an item is the paid
+part's position in the post, so reordering paid parts changes which purchase
+unlocks which part. Use an `id` if you reorder them.
+
+The reader sees the price and an **Unlock** button. Editors of the post see
+the paid part with a dashed border and a note, so they can check it.
+
+## How a payment is verified
+
+1. **The offer.** Next to a locked part, the page carries a signed offer: the
+   post, the item, the price and the post's last-modified time, signed with
+   the site's own key (HMAC-SHA256). The reader can't change the price or ask
+   for another item. After the post is edited, old offers stop working and
+   the reader is asked to reload.
+2. **The checkout.** `POST /wp-json/nano-unlock/v1/checkout` converts the
+   price to XNO at the current rate (the median of CoinGecko, Kraken and
+   KuCoin, cached for five minutes; the last good rate is used for up to a
+   day if all fail), rounds it up to 0.0001 XNO, and adds a random tail of
+   1 to 999999 raw (at most 0.000000000000000000000001 XNO). That **unique
+   amount** identifies the payment, so no memo is needed. A unique key in the
+   database guarantees that no two open checkouts ask for the same amount.
+   The reader gets a QR code, a `nano:` link ("Open in wallet") and the
+   exact amount and address to copy.
+3. **The check.** The page asks `POST /wp-json/nano-unlock/v1/claim` every
+   two seconds. The site asks the node for the address's receivable sends
+   and its recent history (a wallet may already have received the payment),
+   and looks for the exact amount. A match is only a candidate: the site
+   then reads that send block with `block_info` and accepts it only when it
+   is a **confirmed send** of **exactly** that amount **to your address**,
+   first seen **after the checkout started**. With a second node, both must
+   agree.
+4. **Once.** The payment's block hash is stored with a unique key, so one
+   payment unlocks one checkout, once.
+5. **The receipt.** Only the browser that started the checkout (a random
+   httpOnly cookie) gets the receipt: an httpOnly cookie, signed with the
+   site's key, that names the item, the buyer's address and the payment, and
+   lasts 30 days (filter `nano_unlock_receipt_seconds`). The page reloads with
+   the paid part.
+
+The paid part is only ever rendered on the server, and only for a request
+with a valid receipt (or from someone who can edit the post). It is not in
+the HTML before payment, not in feeds, not in excerpts, and not in the core
+REST API output.
+
+A checkout waits 15 minutes. A payment that arrives up to an hour after that
+still counts (the amount stays reserved).
+
+### Node load
+
+The address scan is shared by all open checkouts and cached for 3 seconds,
+so a site makes about two node calls every 3 seconds while anyone is paying,
+and none when nobody is. `block_info` is only called for a matching amount.
+
+The public node `node.nano133.com` allows about 120 RPC calls a minute per
+IP address. One site stays well below that. Several busy sites that share
+one server IP (shared hosting) share that budget; they can set their own
+node.
+
+## Security
+
+- Every REST call needs the page's REST nonce.
+- Rate limits per visitor address: 20 checkouts per 10 minutes (600 per 10
+  minutes for everyone), and 180 payment checks per minute.
+- The visitor address is `REMOTE_ADDR`. Forwarded headers are not trusted,
+  because anyone can send them. Behind a proxy or CDN, set the real header
+  with the `nano_unlock_client_ip` filter.
+- The signing key is 32 random bytes made at activation, stored in the
+  options table (not autoloaded), and never sent to the browser.
+- Settings need `manage_options`. Everything printed is escaped. All SQL
+  values go through `$wpdb->prepare()`.
+- When a node does not answer, the check fails closed: nothing is unlocked,
+  and the reader sees "The network check is busy".
+- Pages with a paid part send no-cache headers and set `DONOTCACHEPAGE`, so
+  page-cache plugins don't store a locked or unlocked copy.
+
+### Limits to know
+
+- **Deactivating the plugin shows the paid parts to everyone.** WordPress
+  then prints the block's inner content and the shortcode's text as they
+  are. To stop selling, remove or unpublish the paid parts first.
+- A receipt is a cookie for one browser. Anyone who copies the cookie out of
+  that browser gets the same access until it expires. There is no "restore
+  on another device" in this version.
+- A payment sent from an exchange works like any other payment, but it comes
+  from the exchange's address. The checkout asks readers to pay from a
+  wallet they control.
+- Nobody can stop a reader from copying text they have unlocked.
+
+## Development
+
+```
+npm install
+composer install
+npm start          # wp-env on http://localhost:8888 (admin / password), copies the plugin in
+npm run sync       # copy the plugin into wp-env again after a change
+npm test           # PHPUnit: amounts, receipts and offers, addresses, the payment rules
+npm run lint       # PHPCS with the WordPress Coding Standards and PHPCompatibilityWP
+npm run e2e        # end-to-end test against a MOCK node (no real network, no real money)
+npm run e2e -- --shots <folder>   # the same, with screenshots
+npm run zip        # nano-unlock.zip
+```
+
+`npm run sync` exists because on this Docker Desktop the nested bind mount
+that wp-env normally uses for a plugin folder came up empty after container
+restarts. Copying the folder is reliable.
+
+The end-to-end test starts `e2e/mock-node.php` (an in-memory ledger on port
+8787), points the plugin at it through `host.docker.internal`, fixes the
+XNO rate at $0.50 with a helper mu-plugin, creates two sample posts (a
+shortcode and a block) and checks:
+
+- the paid parts are not in the HTML, the feed or the core REST API;
+- a checkout asks for a unique amount to the site's address;
+- an unconfirmed payment shows "confirming" and unlocks nothing;
+- a confirmed payment reloads the page with the paid part (about 2 s);
+- a payment already received by the wallet (history) also counts;
+- a shared link, a forged receipt, and one post's receipt on another post
+  all stay locked;
+- no nonce → 403; a changed offer → 400; a used payment on a second
+  checkout → 409; another browser learns "paid" but gets no receipt;
+- node down → 503 and nothing unlocks;
+- 48 fast polls in 6 s cause 2 `receivable` and 2 history calls;
+- the 21st checkout from one address in 10 minutes → 429;
+- the settings page refuses a mistyped address and lists sales;
+- the block loads in the editor with no warnings or script errors.
+
+## WordPress Playground
+
+`blueprint.json` sets up a demo: it installs the plugin from a zip URL,
+sets an address and creates a sample post. Replace `NANO_UNLOCK_ZIP_URL`
+with the address of a published `nano-unlock.zip`, and
+`NANO_UNLOCK_DEMO_ADDRESS` with a Nano address whose wallet you hold
+(payments go there for real), then open:
+
+```
+https://playground.wordpress.net/#<the blueprint JSON, URL-encoded>
+```
+
+Playground runs PHP in the browser, so the plugin's calls to the node and
+the price feeds are browser requests there, and they need CORS. The node
+gateway at `node.nano133.com` does not allow the Playground origin today, so
+in Playground the checkout can be shown but a payment can't be verified.
