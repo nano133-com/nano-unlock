@@ -1,9 +1,9 @@
 #!/bin/sh
 # Copies the plugin (and the e2e helper mu-plugin) into the wp-env WordPress folders.
 #
-# wp-env normally bind-mounts a plugin folder inside the WordPress bind mount. On this
-# Docker Desktop, those nested mounts come and go when a container restarts (the folder
-# shows up empty), so the plugin is copied instead. Run it after each change:
+# wp-env normally bind-mounts a plugin folder inside the WordPress bind mount. On some
+# Docker Desktop setups, those nested mounts come and go when a container restarts (the
+# folder shows up empty), so the plugin is copied instead. Run it after each change:
 #   npm run sync
 set -e
 cd "$(dirname "$0")/.."

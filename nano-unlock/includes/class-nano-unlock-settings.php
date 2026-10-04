@@ -168,7 +168,8 @@ final class Nano_Unlock_Settings {
 		$input = is_array( $input ) ? $input : array();
 		$out   = $old;
 
-		$address = isset( $input['address'] ) ? strtolower( trim( sanitize_text_field( $input['address'] ) ) ) : '';
+		$address = self::submitted( $input, 'address' );
+		$address = null === $address ? $old['address'] : strtolower( sanitize_text_field( $address ) );
 		if ( 0 === strpos( $address, 'xrb_' ) ) {
 			$address = 'nano_' . substr( $address, 4 );
 		}
@@ -178,7 +179,7 @@ final class Nano_Unlock_Settings {
 			add_settings_error( self::OPTION, 'address', __( 'That Nano address is not valid (check for a typo: the last 8 characters are a checksum). The old address is kept.', 'nano-unlock' ) );
 		}
 
-		$usd = isset( $input['usd'] ) ? self::price( $input['usd'] ) : null;
+		$usd = self::price( self::submitted( $input, 'usd' ) );
 		if ( null !== $usd ) {
 			$out['usd'] = $usd;
 		} else {
@@ -186,7 +187,10 @@ final class Nano_Unlock_Settings {
 		}
 
 		foreach ( array( 'node', 'node2' ) as $key ) {
-			$url = isset( $input[ $key ] ) ? trim( (string) $input[ $key ] ) : '';
+			$url = self::submitted( $input, $key );
+			if ( null === $url ) {
+				continue;
+			}
 			if ( 'node' === $key && '' === $url ) {
 				$url = self::DEFAULT_NODE;
 			}
@@ -204,12 +208,29 @@ final class Nano_Unlock_Settings {
 	}
 
 	/**
+	 * One submitted text value, trimmed: '' when it is missing, null when it is not text (a crafted form can send an array).
+	 *
+	 * @param array  $input The submitted values.
+	 * @param string $key   The field.
+	 * @return string|null
+	 */
+	private static function submitted( array $input, $key ) {
+		if ( ! isset( $input[ $key ] ) ) {
+			return '';
+		}
+		return is_scalar( $input[ $key ] ) ? trim( (string) $input[ $key ] ) : null;
+	}
+
+	/**
 	 * A price in dollars as a clean string, or null.
 	 *
 	 * @param mixed $value The value.
 	 * @return string|null
 	 */
 	public static function price( $value ) {
+		if ( ! is_scalar( $value ) ) {
+			return null;
+		}
 		$value = trim( str_replace( '$', '', (string) $value ) );
 		if ( ! is_numeric( $value ) ) {
 			return null;

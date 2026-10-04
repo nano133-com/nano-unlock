@@ -37,6 +37,7 @@ function nano_unlock_wp_reset() {
 		'posts'      => array(),
 		'node'       => null,
 		'nocache'    => 0,
+		'settings_errors' => array(),
 	);
 	$GLOBALS['wpdb'] = new Nano_Unlock_Test_Wpdb();
 	$_COOKIE         = array();
@@ -280,7 +281,11 @@ function sanitize_key( $key ) {
 	return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
 }
 function sanitize_text_field( $text ) {
-	return trim( strip_tags( (string) $text ) );
+	// Like WordPress: an array or an object becomes ''.
+	return is_array( $text ) || is_object( $text ) ? '' : trim( strip_tags( (string) $text ) );
+}
+function add_settings_error( $setting, $code, $message ) {
+	$GLOBALS['nano_unlock_wp']['settings_errors'][ $code ] = $message;
 }
 function wp_unslash( $value ) {
 	return is_string( $value ) ? stripslashes( $value ) : $value;

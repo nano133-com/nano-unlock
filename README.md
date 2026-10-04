@@ -6,8 +6,8 @@ node. There is no account, no card, no middleman and no service to sign up
 for. The plugin never holds a key or any money.
 
 This repository holds the plugin (`nano-unlock/`) and its development tools.
-It is based on the Ӿ Unlock prototype on nano133.com (option A of the design:
-the site verifies payments itself, in PHP).
+It is based on the Ӿ Unlock prototype on nano133.com, in the form where the
+site verifies payments itself, in PHP, with no outside service in between.
 
 - WordPress 6.3 or newer (tested on 6.8 and 7.1), PHP 7.4 or newer (tested on 7.4 and 8.3).
 - No PHP extension beyond the WordPress defaults: amounts are handled as
@@ -204,7 +204,7 @@ npm install
 composer install
 npm start          # wp-env on http://localhost:8888 (admin / password), copies the plugin in
 npm run sync       # copy the plugin into wp-env again after a change
-npm test           # PHPUnit: amounts, receipts and offers, addresses, the payment rules
+npm test           # PHPUnit: amounts, receipts and offers, addresses, the payment rules, rendering, the REST routes, settings
 npm run test:wp    # integration tests inside WordPress: paid-part storage, migration, uninstall
 npm run lint       # PHPCS with the WordPress Coding Standards and PHPCompatibilityWP
 npm run e2e        # end-to-end test against a MOCK node (no real network, no real money)
@@ -212,9 +212,9 @@ npm run e2e -- --shots <folder>   # the same, with screenshots
 npm run zip        # nano-unlock.zip
 ```
 
-`npm run sync` exists because on this Docker Desktop the nested bind mount
-that wp-env normally uses for a plugin folder came up empty after container
-restarts. Copying the folder is reliable.
+`npm run sync` exists because on some Docker Desktop setups the nested bind
+mount that wp-env normally uses for a plugin folder comes up empty after a
+container restarts. Copying the folder is reliable.
 
 **The end-to-end test uses addresses that have no key** (`e2e/address.php`
 hashes a label into a public key; no private key exists). Money sent to them

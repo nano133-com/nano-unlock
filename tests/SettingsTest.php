@@ -43,4 +43,28 @@ final class SettingsTest extends TestCase {
 		$this->assertNull( Nano_Unlock_Settings::price( '5000' ) );
 		$this->assertNull( Nano_Unlock_Settings::price( 'free' ) );
 	}
+
+	public function test_array_values_are_refused_without_a_warning() {
+		nano_unlock_wp_reset();
+		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_settings'] = array(
+			'address' => 'nano_3khpd7q3dzrbcae18bmpidbcrj5mn1n1jnkidup7acocia1b966y88czr5if',
+			'usd'     => '0.05',
+			'node'    => 'https://node.nano133.com/rpc',
+		);
+		// A crafted form posts arrays; PHPUnit turns any "Array to string conversion" warning into a failure.
+		$out = Nano_Unlock_Settings::sanitize(
+			array(
+				'address' => array( 'x' ),
+				'usd'     => array( '1' ),
+				'node'    => array( 'https://evil.test' ),
+				'node2'   => array( 'https://evil.test' ),
+			)
+		);
+		$this->assertSame( 'nano_3khpd7q3dzrbcae18bmpidbcrj5mn1n1jnkidup7acocia1b966y88czr5if', $out['address'], 'the old address is kept' );
+		$this->assertSame( '0.05', $out['usd'], 'the old price is kept' );
+		$this->assertSame( 'https://node.nano133.com/rpc', $out['node'], 'the old node is kept' );
+		$this->assertSame( '', $out['node2'] );
+		$this->assertArrayHasKey( 'usd', $GLOBALS['nano_unlock_wp']['settings_errors'] );
+		$this->assertNull( Nano_Unlock_Settings::price( array( '1' ) ) );
+	}
 }
