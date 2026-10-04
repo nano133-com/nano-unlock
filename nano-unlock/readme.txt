@@ -12,6 +12,8 @@ Sell part of a post for a few cents in Nano (XNO). Readers pay your address dire
 
 == Description ==
 
+Stage: Alpha. What this means: https://nano133.com/stages
+
 Wrap the paid part of a post in the "Nano Unlock (paid part)" block, or in `[nano_unlock price="0.05"] … [/nano_unlock]`. Readers see the price and an Unlock button, pay by QR code or "Open in wallet", and the part appears about two seconds after the payment confirms.
 
 * The money goes straight to your Nano address. The plugin never holds a key or funds.
