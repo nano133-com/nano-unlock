@@ -249,6 +249,25 @@ folder only (no tests, tools or dev files), checks that the zip holds the
 plugin's main file and nothing else, and attaches it to a GitHub release for
 that tag. The version in the tag must match `Version:` in `nano-unlock.php`.
 
+### WordPress.org assets
+
+`.wordpress-org/` holds the directory page's assets (the SVN `assets/` folder):
+`screenshot-1.png` … `screenshot-5.png` (captions in `readme.txt`, Screenshots),
+`banner-772x250.png`, `banner-1544x500.png`, `icon-128x128.png` and
+`icon-256x256.png`. To make them again:
+
+```sh
+npm run start && node e2e/wporg-shots.mjs   # the screenshots
+node e2e/wporg-art.mjs                      # the banner and the icon
+```
+
+The screenshots keep the real default node in the settings, so the pages show
+no test-mode notice, and a helper (`e2e/mu-plugins/nano-unlock-shots.php`, only
+while the script runs) sends those node calls to the mock node: no real
+network and no real money. Their payee is the nano133 Unlock wallet, an
+address with a key, never a keyless test address: a reader may scan the QR
+code in a published screenshot.
+
 ## WordPress Playground
 
 `blueprint.json` sets up a demo: it installs the plugin from the latest
