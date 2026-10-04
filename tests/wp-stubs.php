@@ -130,6 +130,10 @@ class Nano_Unlock_Test_Wpdb {
 		return '';
 	}
 	public function prepare( $sql, ...$args ) {
+		// An identifier (%i, the table name) goes into the SQL, as WordPress does; the values stay apart.
+		if ( false !== strpos( $sql, '%i' ) ) {
+			$sql = str_replace( '%i', '`' . array_shift( $args ) . '`', $sql );
+		}
 		return array(
 			'sql'  => $sql,
 			'args' => $args,

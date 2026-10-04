@@ -8,9 +8,9 @@
 defined( 'ABSPATH' ) || exit;
 
 // This class is the only code that touches the plugin's own table. Its rows change on every poll,
-// so there is nothing to cache, and the table name is the only interpolated part of each query
-// (every value goes through $wpdb->prepare()).
-// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+// so there is nothing to cache. Every query goes through $wpdb->prepare(), the table name as an
+// identifier (%i); only CREATE TABLE, for dbDelta(), names it in the SQL.
+// phpcs:disable WordPress.DB.DirectDatabaseQuery
 
 /**
  * One row per checkout, in the plugin's own table.
@@ -83,7 +83,7 @@ final class Nano_Unlock_Store {
 		global $wpdb;
 		$table = self::table();
 		// Amounts whose checkouts can no longer be paid are free again.
-		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET amount_lock = NULL WHERE amount_lock IS NOT NULL AND expires_at < %d", time() - $late ) );
+		$wpdb->query( $wpdb->prepare( 'UPDATE %i SET amount_lock = NULL WHERE amount_lock IS NOT NULL AND expires_at < %d', $table, time() - $late ) );
 		$suppress = $wpdb->suppress_errors( true );
 		for ( $attempt = 0; $attempt < 5; $attempt++ ) {
 			$amount = Nano_Unlock_Amount::unique( $price );
@@ -118,7 +118,7 @@ final class Nano_Unlock_Store {
 			return null;
 		}
 		$table = self::table();
-		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %s", $id ), ARRAY_A );
+		$row   = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM %i WHERE id = %s', $table, $id ), ARRAY_A );
 		return $row ? $row : null;
 	}
 
@@ -134,12 +134,12 @@ final class Nano_Unlock_Store {
 		global $wpdb;
 		$table    = self::table();
 		$suppress = $wpdb->suppress_errors( true );
-		$n        = $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET status = 'paid', hash = %s, payer = %s, paid_at = %d WHERE id = %s AND status = 'waiting'", $hash, $payer, time(), $id ) );
+		$n        = $wpdb->query( $wpdb->prepare( "UPDATE %i SET status = 'paid', hash = %s, payer = %s, paid_at = %d WHERE id = %s AND status = 'waiting'", $table, $hash, $payer, time(), $id ) );
 		$wpdb->suppress_errors( $suppress );
 		if ( 1 === $n ) {
 			return 'paid';
 		}
-		$other = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE hash = %s", $hash ) );
+		$other = $wpdb->get_var( $wpdb->prepare( 'SELECT id FROM %i WHERE hash = %s', $table, $hash ) );
 		return ( $other && $other !== $id ) ? 'used' : 'taken';
 	}
 
@@ -152,7 +152,7 @@ final class Nano_Unlock_Store {
 	public static function smallest_open_amount( $late ) {
 		global $wpdb;
 		$table   = self::table();
-		$amounts = $wpdb->get_col( $wpdb->prepare( "SELECT amount FROM {$table} WHERE status = 'waiting' AND expires_at >= %d", time() - $late ) );
+		$amounts = $wpdb->get_col( $wpdb->prepare( "SELECT amount FROM %i WHERE status = 'waiting' AND expires_at >= %d", $table, time() - $late ) );
 		$min     = null;
 		foreach ( $amounts as $a ) {
 			if ( null === $min || Nano_Unlock_Amount::compare( $a, $min ) < 0 ) {
@@ -171,7 +171,7 @@ final class Nano_Unlock_Store {
 	public static function recent_sales( $limit = 20 ) {
 		global $wpdb;
 		$table = self::table();
-		return (array) $wpdb->get_results( $wpdb->prepare( "SELECT item, post_id, usd, amount, payer, hash, paid_at FROM {$table} WHERE status = 'paid' ORDER BY paid_at DESC LIMIT %d", $limit ), ARRAY_A );
+		return (array) $wpdb->get_results( $wpdb->prepare( "SELECT item, post_id, usd, amount, payer, hash, paid_at FROM %i WHERE status = 'paid' ORDER BY paid_at DESC LIMIT %d", $table, $limit ), ARRAY_A );
 	}
 
 	/**
@@ -182,6 +182,6 @@ final class Nano_Unlock_Store {
 	public static function prune( $late ) {
 		global $wpdb;
 		$table = self::table();
-		$wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE status = 'waiting' AND expires_at < %d", time() - $late - DAY_IN_SECONDS ) );
+		$wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE status = 'waiting' AND expires_at < %d", $table, time() - $late - DAY_IN_SECONDS ) );
 	}
 }
