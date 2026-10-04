@@ -32,7 +32,9 @@ Its data is kept (paid parts, sales, settings) unless you tick "Also delete the 
 
 = Does it work with page caching? =
 
-Pages with a paid part send no-cache headers and set DONOTCACHEPAGE.
+Yes, with a page-cache plugin that respects DONOTCACHEPAGE (most do). A paid part is shown only on its post's own page, and that page sends no-cache headers and sets DONOTCACHEPAGE. The home page, archives, search, feeds and other posts' pages show a link to the post instead of the paid part, so they can be cached.
+
+A cache that ignores these signals (a CDN or a reverse proxy set to cache every page) could serve one buyer's unlocked page to other readers. Exclude the posts that have a paid part from such a cache, or bypass it for requests that carry the plugin's receipt cookie.
 
 == Changelog ==
 

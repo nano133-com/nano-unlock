@@ -158,6 +158,9 @@ if (SHOTS) {
 }
 await page.goto(urlA);
 check((await page.content()).includes(SECRET_A), "a later visit on this browser is still unlocked (receipt cookie)");
+const homeWithReceipt = await (await ctx.request.get(`${SITE}/`)).text();
+const feedWithReceipt = await (await ctx.request.get(`${SITE}/?feed=rss2`)).text();
+check(!homeWithReceipt.includes(SECRET_A) && !feedWithReceipt.includes(SECRET_A), "with the receipt, the home page and the feed (both cacheable) still hold no paid part");
 
 // ---- 3. Sharing and forging ---------------------------------------------------------------------------
 console.log("\n— sharing and forging");

@@ -1,6 +1,7 @@
 <?php
 /**
- * Unit tests for the plugin's pure parts (no WordPress needed).
+ * Unit tests. The pure parts need no WordPress; the render and REST tests use the small
+ * stand-in in wp-stubs.php.
  *
  * @package NanoUnlock
  */
@@ -31,20 +32,11 @@ if ( ! function_exists( 'wp_parse_url' ) ) {
 		return parse_url( $url, $component ); // phpcs:ignore WordPress.WP.AlternativeFunctions.parse_url_parse_url
 	}
 }
-if ( ! function_exists( 'apply_filters' ) ) {
-	/**
-	 * No filters in unit tests.
-	 *
-	 * @param string $hook  Hook.
-	 * @param mixed  $value Value.
-	 * @return mixed
-	 */
-	function apply_filters( $hook, $value ) {
-		return $value;
-	}
-}
+require_once __DIR__ . '/wp-stubs.php';
 
 $nano_unlock_dir = dirname( __DIR__ ) . '/nano-unlock/includes/';
-foreach ( array( 'blake2b', 'address', 'amount', 'token', 'verifier', 'settings' ) as $nano_unlock_part ) {
+foreach ( array( 'blake2b', 'address', 'amount', 'token', 'verifier', 'busy', 'node', 'price', 'limit', 'store', 'payments', 'settings', 'parts', 'render', 'rest' ) as $nano_unlock_part ) {
 	require_once $nano_unlock_dir . 'class-nano-unlock-' . $nano_unlock_part . '.php';
 }
+require_once $nano_unlock_dir . 'class-nano-unlock.php';
+nano_unlock_wp_reset();

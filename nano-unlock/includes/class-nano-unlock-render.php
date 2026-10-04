@@ -15,6 +15,11 @@ defined( 'ABSPATH' ) || exit;
  * post). Otherwise the HTML holds the price and a signed offer, never the
  * content, hidden or not.
  *
+ * Only the post's own page may show the paid content, because only that page
+ * is marked as not cacheable. Everywhere else (the home page, archives,
+ * search, feeds, another post's page that lists this one, the REST API) a
+ * paid part is a link to the post's page, and the receipt is not even read.
+ *
  * An item is "post:{ID}:{slot}". The slot is the part's `id` attribute when
  * it has one, or its position among the post's paid parts.
  */
@@ -60,11 +65,35 @@ final class Nano_Unlock_Render {
 		}
 		$post = get_post();
 		if ( $post && ( has_shortcode( $post->post_content, 'nano_unlock' ) || has_block( 'nano-unlock/paywall', $post ) ) ) {
-			nocache_headers();
-			if ( ! defined( 'DONOTCACHEPAGE' ) ) {
-				define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- the constant page-cache plugins read.
-			}
+			self::uncacheable();
 		}
+	}
+
+	/**
+	 * Tells the browser, proxies and page-cache plugins not to keep this page.
+	 *
+	 * Called before the page starts (no_cache) and again when a paid part is
+	 * rendered on its post's page, for a part the first check could not see
+	 * (in a pattern or a template, for example). By then the headers may be
+	 * gone, but page-cache plugins read DONOTCACHEPAGE when the page ends.
+	 */
+	private static function uncacheable() {
+		if ( ! headers_sent() ) {
+			nocache_headers();
+		}
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- the constant page-cache plugins read.
+		}
+	}
+
+	/**
+	 * Whether this request is the post's own page: the only place its paid part may be shown.
+	 *
+	 * @param int $post_id The post being rendered.
+	 * @return bool
+	 */
+	public static function own_page( $post_id ) {
+		return is_singular() && (int) get_queried_object_id() === (int) $post_id;
 	}
 
 	/**
@@ -192,6 +221,11 @@ final class Nano_Unlock_Render {
 		$usd      = null === $usd ? Nano_Unlock_Settings::get()['usd'] : $usd;
 
 		wp_enqueue_style( 'nano-unlock' );
+		if ( ! self::own_page( $post_id ) ) {
+			// A cached archive or feed must never hold one reader's paid part: send everyone to the post's page.
+			return self::elsewhere( $post_id, $slot, $usd );
+		}
+		self::uncacheable();
 		$receipt = self::receipt( $item );
 		if ( $receipt ) {
 			return '<div class="nano-unlock nano-unlock--paid" id="' . esc_attr( 'nano-unlock-' . $slot ) . '">' . $content() . '<p class="nano-unlock__note">'
@@ -237,6 +271,22 @@ final class Nano_Unlock_Render {
 			$html .= '<p class="nano-unlock__text">' . esc_html__( 'This part is not for sale yet.', 'nano-unlock' ) . '</p>';
 		}
 		return $html . '</div>';
+	}
+
+	/**
+	 * A paid part outside its post's page: the price and a link to the page.
+	 *
+	 * @param int    $post_id The post.
+	 * @param string $slot    The part's slot.
+	 * @param string $usd     The price in dollars.
+	 * @return string
+	 */
+	private static function elsewhere( $post_id, $slot, $usd ) {
+		return '<div class="nano-unlock nano-unlock--elsewhere"><div class="nano-unlock__head"><span class="nano-unlock__mark" aria-hidden="true">Ӿ</span><strong>' . esc_html__( 'The rest of this is paid', 'nano-unlock' ) . '</strong></div>'
+			. '<p class="nano-unlock__text"><a href="' . esc_url( get_permalink( $post_id ) . '#nano-unlock-' . $slot ) . '">'
+			/* translators: %s: the price in dollars. */
+			. esc_html( sprintf( __( 'Read it on the post\'s page ($%s in Nano)', 'nano-unlock' ), $usd ) )
+			. '</a></p></div>';
 	}
 
 	/**

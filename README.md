@@ -108,10 +108,12 @@ next save moves them out again. Existing posts with inline paid parts are
 moved on activation or update (once; running it again changes nothing, and
 it doesn't change the posts' modified time).
 
-The paid part is only ever rendered on the server, and only for a request
-with a valid receipt (or from someone who can edit the post). It is not in
-the HTML before payment, not in feeds, not in excerpts, and not in the core
-REST API output.
+The paid part is only ever rendered on the server, only on the post's own
+page, and only for a request with a valid receipt (or from someone who can
+edit the post). It is not in the HTML before payment, not in feeds, not in
+excerpts, and not in the core REST API output. On the home page, archives,
+search results, feeds, the REST API and another post's page, a paid part is
+a link to the post's page, even for a buyer.
 
 A checkout waits 15 minutes. A payment that arrives up to an hour after that
 still counts (the amount stays reserved).
@@ -141,8 +143,15 @@ node.
   values go through `$wpdb->prepare()`.
 - When a node does not answer, the check fails closed: nothing is unlocked,
   and the reader sees "The network check is busy".
-- Pages with a paid part send no-cache headers and set `DONOTCACHEPAGE`, so
-  page-cache plugins don't store a locked or unlocked copy.
+- Caching: a paid part is shown only on its post's own page, and that page
+  sends no-cache headers and sets `DONOTCACHEPAGE`. Page-cache plugins that
+  respect `DONOTCACHEPAGE` (most of them) don't store it. Every other page
+  shows a link instead of the paid part, so a cached copy of it holds no
+  reader's paid part.
+- A cache that ignores those signals (a CDN or a reverse proxy set to cache
+  every page, for example) could store one buyer's unlocked page and serve
+  it to others. On such a setup, exclude the posts that have a paid part, or
+  bypass the cache for requests that carry the plugin's receipt cookie.
 
 ### Limits to know
 
