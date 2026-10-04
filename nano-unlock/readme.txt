@@ -4,7 +4,7 @@ Tags: paywall, micropayments, nano, xno, pay per post
 Requires at least: 6.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,6 +89,11 @@ Needed to turn a price in US dollars into XNO. The plugin uses the median of the
 The checkout's QR code is drawn in the reader's browser by a script shipped with the plugin; it calls no service. "Open in wallet" opens a nano: link in the reader's own wallet app.
 
 == Changelog ==
+
+= 0.1.1 =
+* The price requests to CoinGecko, Kraken and KuCoin carry the plugin's own user agent ("NanoUnlock" and its version) instead of WordPress's default, which names the site.
+* Every query on the plugin's checkouts table names the table through $wpdb->prepare() (the %i placeholder).
+* The readme describes the installation, the screenshots and the external services.
 
 = 0.1.0 =
 * First version: settings, shortcode, block, checkout, verification on the site, receipts.
