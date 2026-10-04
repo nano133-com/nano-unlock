@@ -100,6 +100,15 @@ the paid part with a dashed border and a note, so they can check it.
    many purchases never make the request too large for the server. The page
    reloads with the paid part.
 
+   The claim answers "paid" only when the payment is recorded **and** the
+   receipt cookie was sent with that answer. If the payment is recorded but
+   the cookie could not be set, the answer is an error, and the checkout
+   stays on the page with a "Try again" button. The open checkout is kept in
+   the tab's `sessionStorage`, so a reload picks it up again; a page that
+   reloads after "paid" and is still locked (the browser dropped the cookie)
+   says so instead of losing the checkout. The browser that started a
+   checkout can claim its receipt again for an hour after the payment.
+
 ### Where the paid parts are stored
 
 A paid part is never kept in the post's content. On every save, the plugin
@@ -221,7 +230,7 @@ shortcode and a block) and checks:
 - a shared link, a forged receipt, and one post's receipt on another post
   all stay locked;
 - no nonce → 403; a changed offer → 400; a used payment on a second
-  checkout → 409; another browser learns "paid" but gets no receipt;
+  checkout → 409; another browser gets 403 and no receipt;
 - node down → 503 and nothing unlocks;
 - 48 fast polls in 6 s cause 2 `receivable` and 2 history calls;
 - the 21st checkout from one address in 10 minutes → 429;

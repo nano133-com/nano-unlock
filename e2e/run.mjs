@@ -222,7 +222,7 @@ check(replay.status === 409, `a used payment can't pay a second checkout (${repl
 // Another browser (no starter cookie) asking about a paid checkout gets no receipt.
 const paidId = wp("db", "query", `SELECT id FROM wp_nano_unlock_checkouts WHERE status='paid' AND amount='${amountA}'`, "--skip-column-names");
 const other = await api("claim", { id: paidId });
-check(other.status === 200 && other.data.paid === true && !other.setCookie.some((c) => c.startsWith("nano_unlock_receipts=")), "another browser learns 'paid' but gets no receipt");
+check(other.status === 403 && other.data.code === "nano_unlock_not_starter" && !other.setCookie.some((c) => c.startsWith("nano_unlock_receipts=")), "another browser gets 403, not 'paid', and no receipt");
 
 // The node is down: the claim fails closed with 503.
 await mock("/__down", { down: true });

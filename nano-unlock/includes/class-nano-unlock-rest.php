@@ -9,7 +9,7 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * POST /wp-json/nano-unlock/v1/checkout {offer}  a unique amount to pay for one item
- * POST /wp-json/nano-unlock/v1/claim {id}        has the payment arrived? On success, this browser gets its receipt
+ * POST /wp-json/nano-unlock/v1/claim {id}        has the payment arrived? "paid" only once this browser holds its receipt
  *
  * Both need the page's REST nonce, both are rate limited per visitor address,
  * and only the browser that started a checkout gets its receipt.
@@ -116,8 +116,12 @@ final class Nano_Unlock_Rest {
 		}
 
 		$starter = self::starter();
-		$now     = time();
-		$row     = Nano_Unlock_Store::create(
+		if ( '' === $starter ) {
+			// Without the starter cookie this browser could pay but never claim its receipt.
+			return self::error( 503, __( 'This browser did not accept the checkout cookie. Allow cookies for this site, then try again.', 'nano-unlock' ) );
+		}
+		$now = time();
+		$row = Nano_Unlock_Store::create(
 			array(
 				'item'       => Nano_Unlock_Render::item( $post->ID, (string) $offer['s'] ),
 				'post_id'    => $post->ID,
@@ -166,14 +170,8 @@ final class Nano_Unlock_Rest {
 		if ( ! $row ) {
 			return self::error( 404, __( 'No such checkout.', 'nano-unlock' ) );
 		}
-		$mine = self::is_starter( $row );
-
 		if ( 'paid' === $row['status'] ) {
-			// A browser that lost the first answer still gets its receipt, for an hour.
-			if ( $mine && time() - (int) $row['paid_at'] < HOUR_IN_SECONDS ) {
-				self::grant( $row );
-			}
-			return self::ok( array( 'paid' => true ) );
+			return self::paid( $row );
 		}
 		if ( time() > (int) $row['expires_at'] + Nano_Unlock::LATE_SECONDS ) {
 			return self::ok(
@@ -212,8 +210,33 @@ final class Nano_Unlock_Rest {
 			return self::error( 409, __( 'That payment was already used.', 'nano-unlock' ) );
 		}
 		$row = Nano_Unlock_Store::get( $id );
-		if ( $mine && $row && 'paid' === $row['status'] ) {
-			self::grant( $row );
+		if ( ! $row || 'paid' !== $row['status'] ) {
+			// The payment was found but not recorded (a database error): the next check finds it again.
+			return self::error( 503, __( 'The network check is busy, try again in a moment.', 'nano-unlock' ) );
+		}
+		return self::paid( $row );
+	}
+
+	/**
+	 * The answer for a paid checkout: "paid" only when this browser now holds its receipt.
+	 *
+	 * The reader's page reloads on "paid", so a "paid" without the receipt
+	 * cookie would lose the checkout. Every other case is an error that the
+	 * page shows, and the page keeps the checkout to ask again.
+	 *
+	 * @param array $row The paid checkout.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private static function paid( array $row ) {
+		if ( ! self::is_starter( $row ) ) {
+			return self::error( 403, __( 'This checkout is paid, but it was started in another browser (or this browser does not keep cookies for this site), so it cannot be unlocked here.', 'nano-unlock' ), 'nano_unlock_not_starter' );
+		}
+		// A browser that lost the first answer still gets its receipt, for an hour.
+		if ( time() - (int) $row['paid_at'] >= HOUR_IN_SECONDS ) {
+			return self::error( 410, __( 'This checkout was paid more than an hour ago, so its access can no longer be given to a browser.', 'nano-unlock' ), 'nano_unlock_too_late' );
+		}
+		if ( ! self::grant( $row ) ) {
+			return self::error( 500, __( 'Your payment is recorded, but this browser did not get the unlock cookie. Allow cookies for this site, then try again.', 'nano-unlock' ), 'nano_unlock_receipt' );
 		}
 		return self::ok( array( 'paid' => true ) );
 	}
@@ -247,7 +270,7 @@ final class Nano_Unlock_Rest {
 	/**
 	 * This browser's random starter token (made on its first checkout).
 	 *
-	 * @return string
+	 * @return string The token, or '' when a new one's cookie could not be sent.
 	 */
 	private static function starter() {
 		$current = isset( $_COOKIE[ self::STARTER_COOKIE ] ) ? sanitize_text_field( wp_unslash( $_COOKIE[ self::STARTER_COOKIE ] ) ) : '';
@@ -255,8 +278,7 @@ final class Nano_Unlock_Rest {
 			return $current;
 		}
 		$token = bin2hex( random_bytes( 32 ) );
-		self::cookie( self::STARTER_COOKIE, $token, 30 * DAY_IN_SECONDS );
-		return $token;
+		return self::cookie( self::STARTER_COOKIE, $token, 30 * DAY_IN_SECONDS ) ? $token : '';
 	}
 
 	/**
@@ -324,9 +346,10 @@ final class Nano_Unlock_Rest {
 	 *
 	 * @param int    $status  The HTTP status.
 	 * @param string $message The message.
+	 * @param string $code    The error code the script can tell apart.
 	 * @return WP_Error
 	 */
-	private static function error( $status, $message ) {
-		return new WP_Error( 'nano_unlock', $message, array( 'status' => $status ) );
+	private static function error( $status, $message, $code = 'nano_unlock' ) {
+		return new WP_Error( $code, $message, array( 'status' => $status ) );
 	}
 }

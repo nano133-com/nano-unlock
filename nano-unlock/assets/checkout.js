@@ -6,6 +6,11 @@
  * whether the payment arrived. When it has, the site sets a receipt cookie
  * and the page reloads with the paid part in it. The paid part is never in
  * this page before that.
+ *
+ * The open checkout is kept in sessionStorage (per item), so a reload of
+ * this tab picks it up again instead of losing a payment in flight. When the
+ * site answers that the payment is recorded but the receipt cookie could not
+ * be set, the checkout stays, with a "Try again" button.
  */
 ( function () {
 	'use strict';
@@ -17,6 +22,30 @@
 	var t = cfg.text;
 	var POLL_MS = 2000;
 	var LATE_POLL_MS = 5000;
+	var KEY = 'nano-unlock:';
+	// After a "paid" reload, a box that is still locked means the browser didn't keep the receipt.
+	var RELOAD_GRACE_MS = 10 * 60 * 1000;
+
+	function saved( item ) {
+		try {
+			var v = window.sessionStorage.getItem( KEY + item );
+			return v ? JSON.parse( v ) : null;
+		} catch ( e ) {
+			return null;
+		}
+	}
+
+	function save( item, entry ) {
+		try {
+			window.sessionStorage.setItem( KEY + item, JSON.stringify( entry ) );
+		} catch ( e ) {}
+	}
+
+	function forget( item ) {
+		try {
+			window.sessionStorage.removeItem( KEY + item );
+		} catch ( e ) {}
+	}
 
 	function api( path, body ) {
 		return fetch( cfg.rest + path, {
@@ -71,7 +100,8 @@
 		return m + ':' + ( r < 10 ? '0' : '' ) + r;
 	}
 
-	function start( box ) {
+	function start( box, resume ) {
+		var item = box.getAttribute( 'data-nano-unlock-item' ) || '';
 		var button = box.querySelector( '.nano-unlock__button' );
 		var panel = box.querySelector( '.nano-unlock__checkout' );
 		var timer = null;
@@ -84,13 +114,22 @@
 			clearInterval( clock );
 		}
 
-		function fail( message ) {
+		// The checkout is over: show why, and offer a new one. keep: a reload may still pick it up.
+		function fail( message, keep ) {
 			stop();
+			if ( ! keep ) {
+				forget( item );
+			}
 			panel.hidden = false;
 			panel.textContent = '';
 			panel.appendChild( node( 'p', 'nano-unlock__error', message ) );
 			button.disabled = false;
 			button.hidden = false;
+		}
+
+		if ( resume ) {
+			show( resume.c, !! resume.reloaded );
+			return;
 		}
 
 		button.disabled = true;
@@ -102,7 +141,10 @@
 					fail( ( res.data && res.data.message ) || t.busy );
 					return;
 				}
-				show( res.data );
+				// The server's clock minus this browser's, kept with the checkout for a reload.
+				res.data.skew = res.data.now * 1000 - Date.now();
+				save( item, { c: res.data } );
+				show( res.data, false );
 			},
 			function () {
 				button.textContent = button.getAttribute( 'data-label' );
@@ -110,8 +152,9 @@
 			}
 		);
 
-		function show( c ) {
-			var skew = c.now * 1000 - Date.now();
+		// reloaded: the page already reloaded for this paid checkout, and the box is still locked.
+		function show( c, reloaded ) {
+			var skew = c.skew || 0;
 			button.hidden = true;
 			panel.hidden = false;
 			panel.textContent = '';
@@ -164,6 +207,7 @@
 			cancel.type = 'button';
 			cancel.addEventListener( 'click', function () {
 				stop();
+				forget( item );
 				panel.hidden = true;
 				panel.textContent = '';
 				button.hidden = false;
@@ -181,8 +225,34 @@
 				var s = left();
 				status.textContent = s > 0 ? message + ' · ' + mmss( s ) + ' ' + t.left : t.expired;
 			}
-			paint();
-			clock = setInterval( paint, 1000 );
+			var retry = node( 'button', 'nano-unlock__retry', t.retry );
+			retry.type = 'button';
+			retry.hidden = true;
+			retry.addEventListener( 'click', function () {
+				retry.hidden = true;
+				stopped = false;
+				message = t.waiting;
+				status.textContent = message;
+				poll();
+			} );
+			info.insertBefore( retry, cancel );
+
+			// The payment is recorded but this browser has no receipt yet: keep the checkout, ask again on a click.
+			function stuck( text ) {
+				stop();
+				status.textContent = text;
+				retry.hidden = false;
+			}
+
+			function unlocked() {
+				stop();
+				status.textContent = t.paid;
+				save( item, { c: c, reloaded: Date.now() } );
+				var url = new URL( window.location.href );
+				url.searchParams.set( 'nano_unlocked', String( Date.now() ) );
+				url.hash = box.id;
+				window.location.replace( url.toString() );
+			}
 
 			function poll() {
 				if ( stopped ) {
@@ -195,27 +265,27 @@
 						}
 						var d = res.data || {};
 						if ( res.status === 200 && d.paid ) {
-							stop();
-							status.textContent = t.paid;
-							var url = new URL( window.location.href );
-							url.searchParams.set( 'nano_unlocked', String( Date.now() ) );
-							url.hash = box.id;
-							window.location.replace( url.toString() );
+							unlocked();
+							return;
+						}
+						if ( d.code === 'nano_unlock_receipt' ) {
+							stuck( d.message || t.kept );
 							return;
 						}
 						if ( res.status === 200 && d.gone ) {
 							fail( t.gone );
 							return;
 						}
-						if ( res.status === 403 ) {
-							fail( t.reload );
+						if ( d.code === 'nano_unlock_nonce' || d.code === 'rest_cookie_invalid_nonce' ) {
+							// The page is out of date; a reload picks this checkout up again.
+							fail( t.reload, true );
 							return;
 						}
-						if ( res.status === 404 || res.status === 409 ) {
+						if ( res.status === 403 || res.status === 404 || res.status === 409 || res.status === 410 ) {
 							fail( d.message || t.gone );
 							return;
 						}
-						message = res.status === 503 ? t.busy : d.pending ? t.pending : t.waiting;
+						message = res.status >= 500 ? t.busy : d.pending ? t.pending : t.waiting;
 						paint();
 						next();
 					},
@@ -228,8 +298,32 @@
 			function next() {
 				timer = setTimeout( poll, left() > 0 ? POLL_MS : LATE_POLL_MS );
 			}
+
+			if ( reloaded ) {
+				paint();
+				stuck( t.kept );
+				return;
+			}
+			paint();
+			clock = setInterval( paint, 1000 );
 			next();
 		}
+	}
+
+	// A checkout kept from before a reload of this tab, if it can still be paid or claimed.
+	function pending( item ) {
+		var entry = item ? saved( item ) : null;
+		if ( ! entry || ! entry.c || ! entry.c.id ) {
+			return null;
+		}
+		var now = Date.now();
+		var over = ( entry.c.expiresAt + ( Number( cfg.late ) || 3600 ) ) * 1000 < now + ( entry.c.skew || 0 );
+		var stale = entry.reloaded && now - entry.reloaded > RELOAD_GRACE_MS;
+		if ( over || stale ) {
+			forget( item );
+			return null;
+		}
+		return entry;
 	}
 
 	function setup() {
@@ -241,8 +335,12 @@
 			}
 			button.setAttribute( 'data-label', button.textContent );
 			button.addEventListener( 'click', function () {
-				start( box );
+				start( box, null );
 			} );
+			var entry = pending( box.getAttribute( 'data-nano-unlock-item' ) );
+			if ( entry ) {
+				start( box, entry );
+			}
 		} );
 	}
 

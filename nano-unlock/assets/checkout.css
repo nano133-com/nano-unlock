@@ -128,6 +128,7 @@
 }
 
 .nano-unlock__copy,
+.nano-unlock__retry,
 .nano-unlock__cancel {
 	border: 1px solid var(--nano-unlock-line);
 	border-radius: 6px;
@@ -138,6 +139,11 @@
 	padding: 2px 8px;
 	cursor: pointer;
 	flex: none;
+}
+
+.nano-unlock__retry {
+	margin-right: 8px;
+	font-weight: 600;
 }
 
 .nano-unlock__hint {

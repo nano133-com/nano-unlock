@@ -263,7 +263,7 @@ final class Nano_Unlock_Render {
 					'm' => $post ? $post->post_modified_gmt : '',
 				)
 			);
-			$html .= ' data-nano-unlock-offer="' . esc_attr( $offer ) . '"';
+			$html .= ' data-nano-unlock-offer="' . esc_attr( $offer ) . '" data-nano-unlock-item="' . esc_attr( $item ) . '"';
 			self::enqueue();
 		}
 		$html .= '><div class="nano-unlock__head"><span class="nano-unlock__mark" aria-hidden="true">Ӿ</span><strong>' . esc_html__( 'The rest of this is paid', 'nano-unlock' ) . '</strong></div>';
@@ -313,6 +313,7 @@ final class Nano_Unlock_Render {
 			array(
 				'rest'  => esc_url_raw( rest_url( 'nano-unlock/v1/' ) ),
 				'nonce' => wp_create_nonce( 'wp_rest' ),
+				'late'  => Nano_Unlock::LATE_SECONDS,
 				'text'  => array(
 					'starting' => __( 'Starting…', 'nano-unlock' ),
 					'pay'      => __( 'Pay exactly', 'nano-unlock' ),
@@ -332,6 +333,8 @@ final class Nano_Unlock_Render {
 					'exact'    => __( 'Send the exact amount, from a wallet you control. The last digits identify your payment.', 'nano-unlock' ),
 					'left'     => __( 'left', 'nano-unlock' ),
 					'cancel'   => __( 'Cancel', 'nano-unlock' ),
+					'retry'    => __( 'Try again', 'nano-unlock' ),
+					'kept'     => __( 'Your payment is recorded, but this browser did not keep the unlock cookie. Allow cookies for this site, then press Try again.', 'nano-unlock' ),
 					'test'     => __( 'TEST MODE: do not send real money. This site uses a test node.', 'nano-unlock' ),
 				),
 			)
