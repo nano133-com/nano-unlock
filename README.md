@@ -252,15 +252,21 @@ that tag. The version in the tag must match `Version:` in `nano-unlock.php`.
 ## WordPress Playground
 
 `blueprint.json` sets up a demo: it installs the plugin from the latest
-GitHub release (`nano-unlock.zip`), sets Wes's address as the payee, and
-creates a sample post. It needs a published release (see Releases below) and
-a repository that Playground can download from. Open:
+GitHub release (`nano-unlock.zip`), sets the nano133 demo wallet as the
+payee, and creates a sample post with a $0.01 paid part. It needs a
+published release (see Releases above) and a repository that Playground can
+download from. Open:
 
 ```
 https://playground.wordpress.net/#<the blueprint JSON, URL-encoded>
 ```
 
+**The demo takes real money.** Its checkout is a real one: a visitor who
+pays sends about 1 cent of real XNO to the demo wallet, and the paid part
+unlocks in that Playground tab. The sample post starts with a boxed note
+that says so, and that paying is optional.
+
 Playground runs PHP in the browser, so the plugin's calls to the node and
 the price feeds are browser requests there, and they need CORS. The node
-gateway at `node.nano133.com` does not allow the Playground origin today, so
-in Playground the checkout can be shown but a payment can't be verified.
+gateway at `node.nano133.com`, CoinGecko and Kraken allow the Playground
+origin (KuCoin does not, so there the rate comes from the other two feeds).
