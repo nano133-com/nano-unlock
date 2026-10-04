@@ -36,6 +36,8 @@ function nano_unlock_wp_reset() {
 		'can_edit'   => false,
 		'posts'      => array(),
 		'node'       => null,
+		'feeds'      => array(),
+		'gets'       => array(),
 		'nocache'    => 0,
 		'settings_errors' => array(),
 	);
@@ -349,6 +351,19 @@ function wp_remote_post( $url, $args ) {
 	return array(
 		'code' => 200,
 		'body' => json_encode( $node( json_decode( $args['body'], true ) ) ),
+	);
+}
+/**
+ * The price feeds: the test's map of URL => JSON answer (a missing URL fails). Each call is kept.
+ */
+function wp_remote_get( $url, $args = array() ) {
+	$GLOBALS['nano_unlock_wp']['gets'][] = array( 'url' => $url, 'args' => $args );
+	if ( ! isset( $GLOBALS['nano_unlock_wp']['feeds'][ $url ] ) ) {
+		return new WP_Error( 'down', 'no feed' );
+	}
+	return array(
+		'code' => 200,
+		'body' => json_encode( $GLOBALS['nano_unlock_wp']['feeds'][ $url ] ),
 	);
 }
 function wp_remote_retrieve_response_code( $response ) {

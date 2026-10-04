@@ -34,6 +34,8 @@ final class Nano_Unlock_Price {
 				array(
 					'timeout'     => 5,
 					'redirection' => 0,
+					// A plain public price request: the plugin's name, not WordPress's default (which names the site).
+					'user-agent'  => 'NanoUnlock/' . NANO_UNLOCK_VERSION,
 				)
 			);
 			if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {

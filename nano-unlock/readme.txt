@@ -81,7 +81,7 @@ Needed to check payments: the site asks a Nano node whether your address receive
 Needed to turn a price in US dollars into XNO. The plugin uses the median of the feeds that answer, so one wrong feed can't move the price.
 
 * When: when a reader starts a checkout and no rate is cached from the last five minutes. One request to each feed.
-* What is sent: a plain public price request (the URLs below). Nothing about your readers or your sales. As with every request WordPress makes, the user agent names the WordPress version and your site's address, and the feed sees your server's IP address.
+* What is sent: a plain public price request (the URLs below), with the plugin's own user agent ("NanoUnlock" and its version), which names no site. Nothing about your site, your readers or your sales. Like any web service, the feed sees your server's IP address.
 * CoinGecko, https://api.coingecko.com/api/v3/simple/price?ids=nano&vs_currencies=usd. Terms: https://www.coingecko.com/en/terms, API terms: https://www.coingecko.com/en/api_terms, privacy policy: https://www.coingecko.com/en/privacy
 * Kraken, https://api.kraken.com/0/public/Ticker?pair=NANOUSD. Terms: https://www.kraken.com/legal/global-terms, privacy notice: https://www.kraken.com/legal/privacy
 * KuCoin, https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=XNO-USDT. Terms of use: https://www.kucoin.com/legal/terms-of-use, privacy policy: https://www.kucoin.com/legal/privacy-policy
