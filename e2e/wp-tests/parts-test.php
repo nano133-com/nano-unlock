@@ -25,12 +25,23 @@ function nu_parts( $post_id ) {
 	}
 	return $out;
 }
-function nu_render( $post_id ) {
-	global $post;
+/**
+ * The post's content as WordPress shows it: by default on the post's own page (a singular main
+ * query for it, where a paid part may show); with $own_page false, as from any other page (CLI's
+ * own state: not singular), where the plugin shows only a link to the post.
+ */
+function nu_render( $post_id, $own_page = true ) {
+	global $post, $wp_query, $wp_the_query;
+	$saved = array( $wp_query, $wp_the_query );
+	if ( $own_page ) {
+		$wp_query     = new WP_Query( array( 'p' => $post_id, 'post_type' => 'any' ) );
+		$wp_the_query = $wp_query;
+	}
 	$post = get_post( $post_id );
 	setup_postdata( $post );
 	$html = apply_filters( 'the_content', $post->post_content );
 	wp_reset_postdata();
+	list( $wp_query, $wp_the_query ) = $saved;
 	return $html;
 }
 function nu_raw( $post_id ) {
@@ -63,6 +74,8 @@ nu_check( 1 === count( array_filter( $parts, function ( $p ) { return false !== 
 wp_set_current_user( 0 );
 $html = nu_render( $id );
 nu_check( false === strpos( $html, 'SECRET' ) && false !== strpos( $html, 'nano-unlock--locked' ), 'a reader sees the paywall, not the text' );
+$elsewhere = nu_render( $id, false );
+nu_check( false === strpos( $elsewhere, 'SECRET' ) && false !== strpos( $elsewhere, 'nano-unlock--elsewhere' ), 'on any other page, a reader gets a link to the post, not the paywall or the text' );
 wp_set_current_user( 1 );
 $html = nu_render( $id );
 nu_check( false !== strpos( $html, 'SECRET-ONE' ) && false !== strpos( $html, 'SECRET-TWO' ), 'an editor sees both stored parts (preview)' );
