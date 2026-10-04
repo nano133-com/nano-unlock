@@ -76,8 +76,12 @@ the paid part with a dashed border and a note, so they can check it.
    1 to 999999 raw (at most 0.000000000000000000000001 XNO). That **unique
    amount** identifies the payment, so no memo is needed. A unique key in the
    database guarantees that no two open checkouts ask for the same amount.
-   The reader gets a QR code, a `nano:` link ("Open in wallet") and the
-   exact amount and address to copy.
+   The reader gets a QR code and a `nano:` link ("Open in wallet"), which
+   fill in the exact amount, and the full amount and the address with Copy
+   buttons. The amount is always shown with every digit of its tail: a
+   rounded amount (for example Ӿ0.0201 for Ӿ0.020000000000000000000000123456)
+   never matches, and the checkout says so. A payment of a wrong amount
+   unlocks nothing; the site owner sees it in the wallet and can refund it.
 3. **The check.** The page asks `POST /wp-json/nano-unlock/v1/claim` every
    two seconds. The site asks the node for the address's receivable sends
    and its recent history (a wallet may already have received the payment),

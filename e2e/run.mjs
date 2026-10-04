@@ -135,6 +135,8 @@ const m = /^nano:(nano_[a-z0-9]+)\?amount=(\d+)$/.exec(uri ?? "");
 check(!!m && m[1] === SITE_ADDR, `the checkout asks for a payment to the site's address (${uri?.slice(0, 40)}…)`);
 const amountA = m?.[2] ?? "";
 check(amountA.startsWith("2") && amountA.length === 29, `$0.01 at $0.50/XNO is 0.02 XNO plus a unique tail (${amountA})`);
+const shownA = (await page.locator(".nano-unlock__amount").textContent()) ?? "";
+check(shownA === "Ӿ0." + amountA.padStart(30, "0").replace(/0+$/, ""), `"pay exactly" shows the full amount with its tail (${shownA})`);
 await page.waitForTimeout(600);
 if (SHOTS) await box.screenshot({ path: join(SHOTS, "3-checkout.png") });
 

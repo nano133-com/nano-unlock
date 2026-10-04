@@ -38,6 +38,10 @@
 	margin: 10px 0 14px;
 }
 
+.nano-unlock__info .nano-unlock__open {
+	margin-top: 6px;
+}
+
 .nano-unlock__button,
 .nano-unlock__open {
 	display: inline-block;
@@ -92,16 +96,28 @@
 	opacity: 0.75;
 }
 
-.nano-unlock__price {
-	margin: 2px 0 12px;
-	font-size: 1.8em;
-	font-weight: 700;
-	line-height: 1.1;
+.nano-unlock__label--exact {
+	margin-top: 14px;
 }
 
-.nano-unlock__price small {
-	font-size: 0.5em;
-	font-weight: 400;
+/* The full amount, unique tail included: long, so it wraps anywhere. */
+.nano-unlock__price {
+	margin: 2px 0 0;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.nano-unlock__amount {
+	font-size: 1.05em;
+	font-weight: 700;
+	overflow-wrap: anywhere;
+	font-variant-numeric: tabular-nums;
+}
+
+.nano-unlock__usd {
+	margin: 2px 0 0;
+	font-size: 0.85em;
 	opacity: 0.75;
 }
 

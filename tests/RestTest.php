@@ -116,6 +116,26 @@ final class RestTest extends TestCase {
 		$this->assertSame( $c['id'], $this->receipt_for( 'post:42:0' )['c'] );
 	}
 
+	public function test_the_checkout_shows_the_full_amount_with_its_unique_tail() {
+		$c    = $this->checkout();
+		$tail = substr( $c['amount'], -6 );
+		$this->assertNotSame( '000000', $tail, 'the amount has a unique tail' );
+		$this->assertSame( 'nano:' . self::SITE . '?amount=' . $c['amount'], $c['uri'], 'the QR code and wallet link carry the exact amount' );
+		// The amount shown, read back to raw, is the amount asked: every digit, the tail included.
+		$parts = explode( '.', $c['xno'] );
+		$this->assertCount( 2, $parts );
+		$this->assertSame( $c['amount'], ltrim( $parts[0] . str_pad( $parts[1], Nano_Unlock_Amount::RAW_DIGITS, '0' ), '0' ) );
+		$this->assertStringEndsWith( rtrim( $tail, '0' ), $c['xno'] );
+		$this->assertNotSame( Nano_Unlock_Amount::to_xno_short( $c['amount'] ), $c['xno'], 'not a rounded amount' );
+		$this->assertArrayNotHasKey( 'xnoShort', $c, 'no rounded amount is offered to show' );
+
+		// The reader's script shows that full amount (and copies it) in the "Pay exactly" line.
+		$js = file_get_contents( dirname( __DIR__ ) . '/nano-unlock/assets/checkout.js' );
+		$this->assertStringNotContainsString( 'xnoShort', $js );
+		$this->assertStringContainsString( "node( 'code', 'nano-unlock__amount', 'Ӿ' + c.xno )", $js );
+		$this->assertStringContainsString( 'copyButton( c.xno )', $js );
+	}
+
 	public function test_no_paid_answer_when_the_receipt_cookie_cannot_be_set() {
 		$c = $this->checkout();
 		$this->pay( $c['amount'] );

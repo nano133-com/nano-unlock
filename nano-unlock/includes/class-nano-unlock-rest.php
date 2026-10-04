@@ -141,8 +141,8 @@ final class Nano_Unlock_Rest {
 			array(
 				'id'        => $row['id'],
 				'amount'    => $row['amount'],
+				// The full unique amount: a rounded one (without the tail) would never match the payment.
 				'xno'       => Nano_Unlock_Amount::to_xno( $row['amount'] ),
-				'xnoShort'  => Nano_Unlock_Amount::to_xno_short( $raw ),
 				'usd'       => $usd,
 				'rate'      => $rate,
 				'address'   => $row['address'],

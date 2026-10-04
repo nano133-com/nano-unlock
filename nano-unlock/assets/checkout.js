@@ -168,7 +168,7 @@
 				qr.make();
 				var img = node( 'img' );
 				img.src = qr.createDataURL( 5, 2 );
-				img.alt = t.pay + ' Ӿ' + c.xno + ' ' + t.to + ' ' + c.address;
+				img.alt = t.qr + ' Ӿ' + c.xno + ' ' + t.to + ' ' + c.address;
 				img.width = img.height = 200;
 				qrLink.appendChild( img );
 			}
@@ -178,25 +178,26 @@
 			if ( c.test ) {
 				info.appendChild( node( 'p', 'nano-unlock__test', t.test ) );
 			}
-			info.appendChild( node( 'p', 'nano-unlock__label', t.pay ) );
-			var price = node( 'p', 'nano-unlock__price', 'Ӿ' + c.xnoShort );
-			price.appendChild( node( 'small', '', ' ≈ $' + c.usd ) );
-			info.appendChild( price );
+			// The QR code and "Open in wallet" fill in the exact amount; they come first.
+			info.appendChild( node( 'p', 'nano-unlock__label', t.scan ) );
 			var open = node( 'a', 'nano-unlock__open', t.open );
 			open.href = c.uri;
 			info.appendChild( open );
 
+			// Typed by hand, only the full amount matches: every digit, with the unique tail. Never a rounded one.
+			info.appendChild( node( 'p', 'nano-unlock__label nano-unlock__label--exact', t.pay ) );
+			var price = node( 'p', 'nano-unlock__price' );
+			price.appendChild( node( 'code', 'nano-unlock__amount', 'Ӿ' + c.xno ) );
+			price.appendChild( copyButton( c.xno ) );
+			info.appendChild( price );
+			info.appendChild( node( 'p', 'nano-unlock__usd', '≈ $' + c.usd ) );
+
 			var list = node( 'dl', 'nano-unlock__fields' );
-			[
-				[ t.amount, c.xno ],
-				[ t.address, c.address ],
-			].forEach( function ( row ) {
-				list.appendChild( node( 'dt', '', row[ 0 ] ) );
-				var dd = node( 'dd' );
-				dd.appendChild( node( 'code', '', row[ 1 ] ) );
-				dd.appendChild( copyButton( row[ 1 ] ) );
-				list.appendChild( dd );
-			} );
+			list.appendChild( node( 'dt', '', t.address ) );
+			var dd = node( 'dd' );
+			dd.appendChild( node( 'code', '', c.address ) );
+			dd.appendChild( copyButton( c.address ) );
+			list.appendChild( dd );
 			info.appendChild( list );
 			info.appendChild( node( 'p', 'nano-unlock__hint', t.exact ) );
 			var status = node( 'p', 'nano-unlock__status', t.waiting );

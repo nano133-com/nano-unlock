@@ -22,6 +22,10 @@ Wrap the paid part of a post in the "Nano Unlock (paid part)" block, or in `[nan
 
 == Frequently Asked Questions ==
 
+= What if a reader sends a rounded amount? =
+
+Each checkout asks for a unique amount: the price plus a tiny tail in its last digits, which is how the payment is matched. The QR code and "Open in wallet" fill it in, and the full amount has a Copy button. A rounded or retyped amount does not match and unlocks nothing; you see the payment in your wallet and can refund it.
+
 = What happens if I deactivate the plugin? =
 
 The paid parts stay hidden. They are stored apart from the post's content, so WordPress shows only the shortcode's tag (and nothing for the block). Turn the plugin on again and everything works as before, including buyers' access.
