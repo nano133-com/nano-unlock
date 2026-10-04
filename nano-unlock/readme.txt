@@ -20,6 +20,10 @@ Wrap the paid part of a post in the "Nano Unlock (paid part)" block, or in `[nan
 * Your site verifies each payment itself with a Nano node (the default is node.nano133.com; any node works, and a second node can be required to agree).
 * One payment unlocks one item, once. The buyer keeps access on that browser through a signed cookie.
 
+= Credits =
+
+The checkout's QR code is drawn by QR Code Generator for JavaScript (qrcode-generator 2.0.4, assets/vendor/qrcode.js), Copyright (c) 2009 Kazuhiko Arase, under the MIT license: https://github.com/kazuhikoarase/qrcode-generator. "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
+
 == Frequently Asked Questions ==
 
 = What if a reader sends a rounded amount? =

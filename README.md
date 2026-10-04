@@ -270,3 +270,14 @@ Playground runs PHP in the browser, so the plugin's calls to the node and
 the price feeds are browser requests there, and they need CORS. The node
 gateway at `node.nano133.com`, CoinGecko and Kraken allow the Playground
 origin (KuCoin does not, so there the rate comes from the other two feeds).
+
+## License
+
+Nano Unlock is free software under the GNU General Public License, version 2
+or (at your option) any later version: see `LICENSE`.
+
+The checkout's QR code is drawn by
+[QR Code Generator for JavaScript](https://github.com/kazuhikoarase/qrcode-generator)
+(qrcode-generator 2.0.4, `nano-unlock/assets/vendor/qrcode.js`), Copyright
+(c) 2009 Kazuhiko Arase, under the MIT license. "QR Code" is a registered
+trademark of DENSO WAVE INCORPORATED.
