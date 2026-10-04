@@ -7,7 +7,6 @@
 // (a shortcode and a block), and walks through the reader's flows with Playwright.
 
 import { execFileSync, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -165,7 +164,7 @@ check(!homeWithReceipt.includes(SECRET_A) && !feedWithReceipt.includes(SECRET_A)
 // ---- 3. Sharing and forging ---------------------------------------------------------------------------
 console.log("\n— sharing and forging");
 const cookies = await ctx.cookies(SITE);
-const receipt = cookies.find((c) => c.name.startsWith("nano_unlock_r_"));
+const receipt = cookies.find((c) => c.name === "nano_unlock_receipts");
 check(!!receipt && receipt.httpOnly, "the receipt is an httpOnly cookie");
 const friend = await browser.newContext();
 const fp = await friend.newPage();
@@ -174,10 +173,9 @@ check(!(await fp.content()).includes(SECRET_A), "a shared link shows the paywall
 await friend.addCookies([{ ...receipt, value: receipt.value.slice(0, -2) + (receipt.value.endsWith("AA") ? "BB" : "AA") }]);
 await fp.goto(urlA);
 check(!(await fp.content()).includes(SECRET_A), "a forged receipt unlocks nothing");
-// Post A's receipt, sent under post B's cookie name: it names item A, so B stays locked.
-const nameB = "nano_unlock_r_" + createHash("sha256").update(`post:${postB}:0`).digest("hex").slice(0, 16);
+// The buyer's receipts cookie names post A's item only, so post B stays locked.
 await friend.clearCookies();
-await friend.addCookies([{ ...receipt, name: nameB }]);
+await friend.addCookies([receipt]);
 await fp.goto(urlB);
 check(!(await fp.content()).includes(SECRET_B), "a receipt for one post doesn't unlock another");
 await friend.close();
@@ -224,7 +222,7 @@ check(replay.status === 409, `a used payment can't pay a second checkout (${repl
 // Another browser (no starter cookie) asking about a paid checkout gets no receipt.
 const paidId = wp("db", "query", `SELECT id FROM wp_nano_unlock_checkouts WHERE status='paid' AND amount='${amountA}'`, "--skip-column-names");
 const other = await api("claim", { id: paidId });
-check(other.status === 200 && other.data.paid === true && !other.setCookie.some((c) => c.startsWith("nano_unlock_r_")), "another browser learns 'paid' but gets no receipt");
+check(other.status === 200 && other.data.paid === true && !other.setCookie.some((c) => c.startsWith("nano_unlock_receipts=")), "another browser learns 'paid' but gets no receipt");
 
 // The node is down: the claim fails closed with 503.
 await mock("/__down", { down: true });

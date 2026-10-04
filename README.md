@@ -90,10 +90,15 @@ the paid part with a dashed border and a note, so they can check it.
 4. **Once.** The payment's block hash is stored with a unique key, so one
    payment unlocks one checkout, once.
 5. **The receipt.** Only the browser that started the checkout (a random
-   httpOnly cookie) gets the receipt: an httpOnly cookie, signed with the
-   site's key, that names the item, the buyer's address and the payment, and
-   lasts 30 days (filter `nano_unlock_receipt_seconds`). The page reloads with
-   the paid part.
+   httpOnly cookie) gets the receipt. All of a browser's receipts share one
+   httpOnly cookie, `nano_unlock_receipts`, signed with the site's key
+   (HMAC-SHA256). Each receipt names only the item, the checkout that paid
+   for it and its expiry (30 days, filter `nano_unlock_receipt_seconds`); the
+   buyer's address and the payment stay in the checkout's row on the server.
+   One receipt adds about 70 bytes, and the cookie keeps the newest receipts
+   that fit in 2800 bytes (about 38 typical ones; the oldest are dropped), so
+   many purchases never make the request too large for the server. The page
+   reloads with the paid part.
 
 ### Where the paid parts are stored
 
@@ -151,7 +156,8 @@ node.
 - A cache that ignores those signals (a CDN or a reverse proxy set to cache
   every page, for example) could store one buyer's unlocked page and serve
   it to others. On such a setup, exclude the posts that have a paid part, or
-  bypass the cache for requests that carry the plugin's receipt cookie.
+  bypass the cache for requests that carry the `nano_unlock_receipts`
+  cookie.
 
 ### Limits to know
 
@@ -170,6 +176,9 @@ node.
 - A receipt is a cookie for one browser. Anyone who copies the cookie out of
   that browser gets the same access until it expires. There is no "restore
   on another device" in this version.
+- A browser keeps about 38 receipts (fewer with long item ids). After that,
+  each new purchase drops the oldest receipt, and that item locks again on
+  that browser.
 - A payment sent from an exchange works like any other payment, but it comes
   from the exchange's address. The checkout asks readers to pay from a
   wallet they control.

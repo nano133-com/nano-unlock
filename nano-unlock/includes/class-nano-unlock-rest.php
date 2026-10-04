@@ -219,9 +219,10 @@ final class Nano_Unlock_Rest {
 	}
 
 	/**
-	 * Sets the receipt cookie for a paid checkout.
+	 * Adds a paid checkout's item to this browser's receipts cookie.
 	 *
 	 * @param array $row The checkout.
+	 * @return bool Whether the cookie was sent.
 	 */
 	private static function grant( array $row ) {
 		/**
@@ -231,8 +232,16 @@ final class Nano_Unlock_Rest {
 		 * @param string $item    The item key.
 		 */
 		$seconds = (int) apply_filters( 'nano_unlock_receipt_seconds', 30 * DAY_IN_SECONDS, $row['item'] );
-		$token   = Nano_Unlock::tokens()->receipt( $row['item'], (string) $row['payer'], (string) $row['hash'], $seconds );
-		self::cookie( Nano_Unlock_Render::cookie_name( $row['item'] ), $token, $seconds );
+		$name    = Nano_Unlock_Render::RECEIPTS_COOKIE;
+		$current = isset( $_COOKIE[ $name ] ) && is_string( $_COOKIE[ $name ] ) ? sanitize_text_field( wp_unslash( $_COOKIE[ $name ] ) ) : '';
+		$tokens  = Nano_Unlock::tokens();
+		$token   = $tokens->add_receipt( $current, (string) $row['item'], (string) $row['id'], $seconds );
+		// The cookie lives as long as its longest receipt.
+		$until = time() + $seconds;
+		foreach ( $tokens->receipts( $token ) as $receipt ) {
+			$until = max( $until, $receipt['e'] );
+		}
+		return self::cookie( $name, $token, $until - time() );
 	}
 
 	/**
@@ -267,24 +276,35 @@ final class Nano_Unlock_Rest {
 	 * @param string $name    Name.
 	 * @param string $value   Value.
 	 * @param int    $seconds Lifetime.
+	 * @return bool Whether the cookie was sent.
 	 */
 	private static function cookie( $name, $value, $seconds ) {
-		if ( headers_sent() ) {
-			return;
-		}
-		setcookie(
-			$name,
-			$value,
-			array(
-				'expires'  => time() + $seconds,
-				'path'     => COOKIEPATH ? COOKIEPATH : '/',
-				'domain'   => COOKIE_DOMAIN ? COOKIE_DOMAIN : '',
-				'secure'   => is_ssl(),
-				'httponly' => true,
-				'samesite' => 'Lax',
-			)
+		$options = array(
+			'expires'  => time() + $seconds,
+			'path'     => COOKIEPATH ? COOKIEPATH : '/',
+			'domain'   => COOKIE_DOMAIN ? COOKIE_DOMAIN : '',
+			'secure'   => is_ssl(),
+			'httponly' => true,
+			'samesite' => 'Lax',
 		);
-		$_COOKIE[ $name ] = $value;
+		/**
+		 * Short-circuits sending one of the plugin's cookies, for a host that sends
+		 * cookies its own way (and for tests). Return true when the cookie was sent,
+		 * false when it could not be; null sends it with setcookie().
+		 *
+		 * @param bool|null $sent    Null.
+		 * @param string    $name    The cookie's name.
+		 * @param string    $value   The cookie's value.
+		 * @param array     $options The setcookie() options.
+		 */
+		$sent = apply_filters( 'nano_unlock_pre_set_cookie', null, $name, $value, $options );
+		if ( null === $sent ) {
+			$sent = ! headers_sent() && setcookie( $name, $value, $options );
+		}
+		if ( $sent ) {
+			$_COOKIE[ $name ] = $value;
+		}
+		return (bool) $sent;
 	}
 
 	/**

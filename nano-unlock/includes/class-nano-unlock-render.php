@@ -26,6 +26,11 @@ defined( 'ABSPATH' ) || exit;
 final class Nano_Unlock_Render {
 
 	/**
+	 * The httpOnly cookie that holds this browser's receipts (see Nano_Unlock_Token).
+	 */
+	const RECEIPTS_COOKIE = 'nano_unlock_receipts';
+
+	/**
 	 * Paid parts rendered so far, per post, in this rendering of its content.
 	 *
 	 * @var int[]
@@ -174,28 +179,32 @@ final class Nano_Unlock_Render {
 	}
 
 	/**
-	 * The name of the receipt cookie for an item.
+	 * The receipt for $item in this request, or null.
 	 *
 	 * @param string $item The item key.
-	 * @return string
+	 * @return array|null array( 'i' => item, 'c' => checkout id, 'e' => expiry ).
 	 */
-	public static function cookie_name( $item ) {
-		return 'nano_unlock_r_' . substr( hash( 'sha256', $item ), 0, 16 );
+	public static function receipt( $item ) {
+		if ( empty( $_COOKIE[ self::RECEIPTS_COOKIE ] ) || ! is_string( $_COOKIE[ self::RECEIPTS_COOKIE ] ) ) {
+			return null;
+		}
+		$token = sanitize_text_field( wp_unslash( $_COOKIE[ self::RECEIPTS_COOKIE ] ) );
+		return Nano_Unlock::tokens()->check_receipt( $token, $item );
 	}
 
 	/**
-	 * The receipt in this request for $item, or null.
+	 * The note under an unlocked part: who paid, from the checkout's row.
 	 *
-	 * @param string $item The item key.
-	 * @return array|null
+	 * @param array $receipt The receipt.
+	 * @return string
 	 */
-	public static function receipt( $item ) {
-		$name = self::cookie_name( $item );
-		if ( empty( $_COOKIE[ $name ] ) ) {
-			return null;
+	private static function paid_note( array $receipt ) {
+		$row = Nano_Unlock_Store::get( (string) $receipt['c'] );
+		if ( ! $row || 'paid' !== $row['status'] || '' === (string) $row['payer'] ) {
+			return __( 'Unlocked with Nano', 'nano-unlock' );
 		}
-		$token = sanitize_text_field( wp_unslash( $_COOKIE[ $name ] ) );
-		return Nano_Unlock::tokens()->check_receipt( $token, $item );
+		/* translators: %s: the paying Nano address, shortened. */
+		return sprintf( __( 'Unlocked with Nano by %s', 'nano-unlock' ), Nano_Unlock_Address::short( (string) $row['payer'] ) );
 	}
 
 	/**
@@ -229,8 +238,7 @@ final class Nano_Unlock_Render {
 		$receipt = self::receipt( $item );
 		if ( $receipt ) {
 			return '<div class="nano-unlock nano-unlock--paid" id="' . esc_attr( 'nano-unlock-' . $slot ) . '">' . $content() . '<p class="nano-unlock__note">'
-				/* translators: %s: the paying Nano address, shortened. */
-				. esc_html( sprintf( __( 'Unlocked with Nano by %s', 'nano-unlock' ), Nano_Unlock_Address::short( (string) $receipt['b'] ) ) )
+				. esc_html( self::paid_note( $receipt ) )
 				. '</p></div>';
 		}
 

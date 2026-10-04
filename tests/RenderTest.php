@@ -28,7 +28,16 @@ final class RenderTest extends TestCase {
 	 */
 	private function pay() {
 		$item = Nano_Unlock_Render::item( self::POST, '0' );
-		$_COOKIE[ Nano_Unlock_Render::cookie_name( $item ) ] = Nano_Unlock::tokens()->receipt( $item, self::BUYER, str_repeat( 'A', 64 ), 3600 );
+		$id   = str_repeat( 'c', 24 );
+		$GLOBALS['wpdb']->rows[ $id ] = array(
+			'id'      => $id,
+			'item'    => $item,
+			'status'  => 'paid',
+			'payer'   => self::BUYER,
+			'hash'    => str_repeat( 'A', 64 ),
+			'paid_at' => (string) time(),
+		);
+		$_COOKIE[ Nano_Unlock_Render::RECEIPTS_COOKIE ] = Nano_Unlock::tokens()->add_receipt( '', $item, $id, 3600 );
 	}
 
 	private function render() {
@@ -41,6 +50,7 @@ final class RenderTest extends TestCase {
 		$html = $this->render();
 		$this->assertStringContainsString( self::SECRET, $html );
 		$this->assertStringContainsString( 'nano-unlock--paid', $html );
+		$this->assertStringContainsString( 'Unlocked with Nano by nano_3g', $html, 'the note names the payer, read from the checkout' );
 		$this->assertTrue( defined( 'DONOTCACHEPAGE' ), 'the page is marked as not cacheable' );
 	}
 
@@ -74,6 +84,20 @@ final class RenderTest extends TestCase {
 		$GLOBALS['nano_unlock_wp']['can_edit'] = true;
 		$this->assertStringContainsString( self::SECRET, $this->render() );
 		$GLOBALS['nano_unlock_wp']['singular'] = false;
+		$this->assertStringNotContainsString( self::SECRET, $this->render() );
+	}
+
+	public function test_another_items_receipt_unlocks_nothing() {
+		$this->pay();
+		Nano_Unlock_Render::reset( '' );
+		$html = Nano_Unlock_Render::shortcode( array( 'id' => 'other' ), self::SECRET );
+		$this->assertStringNotContainsString( self::SECRET, $html );
+	}
+
+	public function test_a_forged_receipt_unlocks_nothing() {
+		$this->pay();
+		$token = $_COOKIE[ Nano_Unlock_Render::RECEIPTS_COOKIE ];
+		$_COOKIE[ Nano_Unlock_Render::RECEIPTS_COOKIE ] = substr( $token, 0, -2 ) . ( 'AA' === substr( $token, -2 ) ? 'BB' : 'AA' );
 		$this->assertStringNotContainsString( self::SECRET, $this->render() );
 	}
 

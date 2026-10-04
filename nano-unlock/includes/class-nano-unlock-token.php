@@ -19,10 +19,20 @@ defined( 'ABSPATH' ) || exit;
  * - an offer, printed in the page next to a locked item: which post, which
  *   item and what price. The browser sends it back to start a checkout, so a
  *   reader can't change the price or ask for an item that isn't there.
- * - a receipt, kept in an httpOnly cookie after a payment: this browser may
- *   see this item until this time.
+ * - the receipts, kept in one httpOnly cookie after payments: for each item
+ *   this browser bought, the checkout that paid for it and until when it may
+ *   be seen. The payer and the payment's hash stay on the server, in the
+ *   checkout's row, so each entry is small; the cookie keeps the newest
+ *   entries that fit in RECEIPTS_MAX_BYTES, so many purchases never grow the
+ *   request's Cookie header past what servers accept.
  */
 final class Nano_Unlock_Token {
+
+	/**
+	 * The most a receipts token may weigh, in bytes. A browser keeps a cookie of up to
+	 * 4096 bytes, and servers refuse a Cookie header past about 8 KB in all.
+	 */
+	const RECEIPTS_MAX_BYTES = 2800;
 
 	/**
 	 * The signing key (raw bytes).
@@ -47,7 +57,7 @@ final class Nano_Unlock_Token {
 	/**
 	 * Signs claims for a purpose.
 	 *
-	 * @param string $purpose "offer" or "receipt".
+	 * @param string $purpose "offer" or "receipts".
 	 * @param array  $claims  The claims.
 	 * @return string
 	 */
@@ -59,12 +69,12 @@ final class Nano_Unlock_Token {
 	/**
 	 * The claims of a token signed for $purpose, or null.
 	 *
-	 * @param string $purpose "offer" or "receipt".
+	 * @param string $purpose "offer" or "receipts".
 	 * @param mixed  $token   The token.
 	 * @return array|null
 	 */
 	public function verify( $purpose, $token ) {
-		if ( ! is_string( $token ) || strlen( $token ) > 2048 || 1 !== substr_count( $token, '.' ) ) {
+		if ( ! is_string( $token ) || strlen( $token ) > 4096 || 1 !== substr_count( $token, '.' ) ) {
 			return null;
 		}
 		list( $body, $mac ) = explode( '.', $token );
@@ -77,43 +87,83 @@ final class Nano_Unlock_Token {
 	}
 
 	/**
-	 * A receipt for one item, valid for $seconds.
+	 * The receipts token with one more receipt: $item, paid by checkout $checkout, valid for $seconds.
 	 *
-	 * @param string $item    The item key.
-	 * @param string $buyer   The paying address.
-	 * @param string $hash    The payment's block hash.
-	 * @param int    $seconds Lifetime.
-	 * @param int    $now     The time (for tests).
+	 * Expired receipts are dropped, a receipt for the same item is replaced,
+	 * and the oldest receipts are dropped until the token fits RECEIPTS_MAX_BYTES.
+	 *
+	 * @param mixed  $token    The current receipts token (anything invalid counts as none).
+	 * @param string $item     The item key.
+	 * @param string $checkout The checkout's id.
+	 * @param int    $seconds  Lifetime.
+	 * @param int    $now      The time (for tests).
 	 * @return string
 	 */
-	public function receipt( $item, $buyer, $hash, $seconds, $now = null ) {
-		$now = null === $now ? time() : $now;
-		return $this->sign(
-			'receipt',
-			array(
-				'i' => $item,
-				'b' => $buyer,
-				'h' => $hash,
-				'e' => $now + $seconds,
-			)
+	public function add_receipt( $token, $item, $checkout, $seconds, $now = null ) {
+		$now     = null === $now ? time() : $now;
+		$entries = array();
+		foreach ( $this->receipts( $token, $now ) as $key => $entry ) {
+			if ( $key !== $item ) {
+				$entries[] = array( $key, $entry['e'], $entry['c'] );
+			}
+		}
+		$entries[] = array( (string) $item, $now + (int) $seconds, (string) $checkout );
+		usort(
+			$entries,
+			function ( $a, $b ) {
+				return $a[1] - $b[1];
+			}
 		);
+		for ( $left = count( $entries ); $left > 0; $left-- ) {
+			$signed = $this->sign( 'receipts', array( 'r' => $entries ) );
+			$fits   = strlen( $signed ) <= self::RECEIPTS_MAX_BYTES;
+			if ( $fits || 1 === $left ) {
+				return $signed;
+			}
+			array_shift( $entries );
+		}
+		return $this->sign( 'receipts', array( 'r' => $entries ) );
 	}
 
 	/**
-	 * The claims of a receipt for $item that hasn't expired, or null.
+	 * The receipts in a token that haven't expired: item => array( 'c' => checkout id, 'e' => expiry ).
 	 *
-	 * @param mixed  $token The token.
-	 * @param string $item  The item key it must name.
+	 * @param mixed $token The receipts token.
+	 * @param int   $now   The time (for tests).
+	 * @return array<string, array{c:string, e:int}>
+	 */
+	public function receipts( $token, $now = null ) {
+		$now    = null === $now ? time() : $now;
+		$claims = $this->verify( 'receipts', $token );
+		$out    = array();
+		if ( ! $claims || ! isset( $claims['r'] ) || ! is_array( $claims['r'] ) ) {
+			return $out;
+		}
+		foreach ( $claims['r'] as $entry ) {
+			if ( is_array( $entry ) && 3 === count( $entry ) && is_string( $entry[0] ) && is_int( $entry[1] ) && is_string( $entry[2] ) && $entry[1] > $now ) {
+				$out[ $entry[0] ] = array(
+					'c' => $entry[2],
+					'e' => $entry[1],
+				);
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * The receipt for $item in a receipts token, if it hasn't expired: array( 'i' => item, 'c' => checkout id, 'e' => expiry ), or null.
+	 *
+	 * @param mixed  $token The receipts token.
+	 * @param string $item  The item key.
 	 * @param int    $now   The time (for tests).
 	 * @return array|null
 	 */
 	public function check_receipt( $token, $item, $now = null ) {
-		$now = null === $now ? time() : $now;
-		$c   = $this->verify( 'receipt', $token );
-		if ( ! $c || ! isset( $c['i'], $c['e'] ) || $c['i'] !== $item || ! is_int( $c['e'] ) || $c['e'] <= $now ) {
+		$receipts = $this->receipts( $token, $now );
+		if ( ! isset( $receipts[ $item ] ) ) {
 			return null;
 		}
-		return $c;
+		return array( 'i' => $item ) + $receipts[ $item ];
 	}
 
 	/**
