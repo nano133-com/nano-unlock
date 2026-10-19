@@ -72,25 +72,49 @@ the paid part with a dashed border and a note, so they can check it.
 2. **The checkout.** `POST /wp-json/nano-unlock/v1/checkout` converts the
    price to XNO at the current rate (the median of CoinGecko, Kraken and
    KuCoin, cached for five minutes; the last good rate is used for up to a
-   day if all fail), rounds it up to 0.0001 XNO, and adds a random tail of
-   1 to 999999 raw (at most 0.000000000000000000000001 XNO). That **unique
-   amount** identifies the payment, so no memo is needed. A unique key in the
-   database guarantees that no two open checkouts ask for the same amount.
+   day if all fail) and rounds it up to 0.0001 XNO (a "step"). That **clean
+   amount**, with no tail, is the checkout's own amount while no other open
+   checkout holds it; otherwise the checkout gets the next free step
+   (Ӿ0.1512, Ӿ0.1513, …). So an amount has **at most four decimals**, and a
+   wallet that rounds to four decimals (Cake Wallet cut 0.1.1's tailed
+   amounts) still sends it exactly. The amount identifies the payment, so no
+   memo is needed, and the match stays exact: no tolerance.
+
+   **The reservation.** `amount_lock`, a unique key in the checkouts table,
+   holds each checkout's amount. `Nano_Unlock_Store::create()` reads which
+   of the price's 100 steps are held, then inserts the lowest free one; when
+   two readers pick the same free step at the same instant, the unique key
+   refuses the second insert and that reader moves on to the next step
+   (PHPUnit proves it with 24 parallel processes on one database, and the
+   end-to-end test with 110 parallel requests on MySQL). An amount is freed
+   at once when its checkout is paid or cancelled. An unpaid amount stays
+   held for the checkout's 15 minutes, the hour for late payments and 5
+   minutes more (`HOLD_AFTER`, longer than the 2-minute clock allowance
+   below), so a late payment can never meet a new checkout that got its
+   amount. At most 100 steps (Ӿ0.0099 above the price): when all are held,
+   the reader gets "Busy right now … Try again in a moment" (HTTP 503) and
+   nothing is held. One visitor (an IP address, or an IPv6 /64) may hold at
+   most 10 amounts at once, so one visitor alone can't use up a price's
+   steps; the count uses a keyed hash of the address, stored only while the
+   amount is held.
+
    The reader gets a QR code and a `nano:` link ("Open in wallet"), which
-   fill in the exact amount, and the full amount and the address with Copy
-   buttons. The amount is always shown with every digit of its tail: a
-   rounded amount (for example Ӿ0.0201 for Ӿ0.020000000000000000000000123456)
-   never matches, and the checkout says so. A payment of a wrong amount
-   unlocks nothing; the site owner sees it in the wallet and can refund it.
+   fill in the exact amount, and one line: "Pay $0.05 · Ӿ0.1512". The
+   address and the amount with Copy buttons, the expiry and one sentence of
+   help are under "Details". A payment of a wrong amount unlocks nothing;
+   the site owner sees it in the wallet and can refund it.
 3. **The check.** The page asks `POST /wp-json/nano-unlock/v1/claim` every
    two seconds. The site asks the node for the address's receivable sends
    and its recent history (a wallet may already have received the payment),
    and looks for the exact amount (at most 50 entries each: the most the
-   node.nano133.com gateway allows). A match is only a candidate: the site
-   then reads that send block with `block_info` and accepts it only when it
-   is a **confirmed send** of **exactly** that amount **to your address**,
-   first seen **after the checkout started**. With a second node, both must
-   agree.
+   node.nano133.com gateway allows). A payment that already paid a checkout
+   is skipped: an amount comes back for a new checkout after its sale, and
+   the old payment is still in the scan. A match is only a candidate: the
+   site then reads that send block with `block_info` and accepts it only
+   when it is a **confirmed send** of **exactly** that amount **to your
+   address**, first seen by the node **after the checkout started** (its
+   `local_timestamp`, with 2 minutes for the clocks; a block without one
+   never counts). With a second node, both must agree.
 4. **Once.** The payment's block hash is stored with a unique key, so one
    payment unlocks one checkout, once.
 5. **The receipt.** Only the browser that started the checkout (a random
@@ -134,7 +158,29 @@ search results, feeds, the REST API and another post's page, a paid part is
 a link to the post's page, even for a buyer.
 
 A checkout waits 15 minutes. A payment that arrives up to an hour after that
-still counts (the amount stays reserved).
+still counts (the amount stays reserved, and 5 minutes more).
+
+**Cancel** (`POST /wp-json/nano-unlock/v1/cancel`, only from the browser that
+started the checkout) first asks the node, without the shared scan: if the
+payment is there, the checkout is paid and unlocks; if it is seen but not
+confirmed, the checkout stays open; if the node does not answer, nothing is
+cancelled and the amount stays held. Otherwise the checkout ends and its
+amount is free at once. A reader who just leaves the page cancels nothing.
+
+**Coincidences.** A payment matches only an open checkout that holds exactly
+its amount, sent to the site's address after that checkout started. The
+plugin's own payments can't cross: two open checkouts never share an amount,
+and a used payment is skipped. Only an outside payment to the same address,
+of exactly that 4-decimal amount, during a reader's checkout, would unlock
+it; the owner still receives that money. Round amounts (Ӿ0.1, Ӿ1) are the
+likely ones; an address used only for the plugin has none.
+
+### Wallets
+
+Amounts have at most four decimals, because some wallets round to four (Cake
+Wallet cut a tailed amount of 0.1.1, so that payment did not match). Version
+0.1.2 was tested with the mock node only: no wallet app has paid one of its
+amounts yet, and Cake Wallet itself was not tested with any version.
 
 ### Node load
 
@@ -151,7 +197,8 @@ node.
 
 - Every REST call needs the page's REST nonce.
 - Rate limits per visitor address: 20 checkouts per 10 minutes (600 per 10
-  minutes for everyone), and 180 payment checks per minute.
+  minutes for everyone), at most 10 open checkouts at once, and 180 payment
+  checks (and cancels) per minute.
 - The visitor address is `REMOTE_ADDR`. Forwarded headers are not trusted,
   because anyone can send them. Behind a proxy or CDN, set the real header
   with the `nano_unlock_client_ip` filter.
@@ -204,8 +251,8 @@ npm install
 composer install
 npm start          # wp-env on http://localhost:8888 (admin / password), copies the plugin in
 npm run sync       # copy the plugin into wp-env again after a change
-npm test           # PHPUnit: amounts, receipts and offers, addresses, the payment rules, rendering, the REST routes, settings
-npm run test:wp    # integration tests inside WordPress: paid-part storage, migration, uninstall
+npm test           # PHPUnit: amounts and their reservation (24 parallel processes on SQLite), receipts and offers, addresses, the payment rules, rendering, the REST routes, settings
+npm run test:wp    # integration tests inside WordPress: paid-part storage, migration, amounts on MySQL and the update from 0.1.1, uninstall
 npm run lint       # PHPCS with the WordPress Coding Standards and PHPCompatibilityWP
 npm run e2e        # end-to-end test against a MOCK node (no real network, no real money)
 npm run e2e -- --shots <folder>   # the same, with screenshots
@@ -227,17 +274,30 @@ XNO rate at $0.50 with a helper mu-plugin, creates two sample posts (a
 shortcode and a block) and checks:
 
 - the paid parts are not in the HTML, the feed or the core REST API;
-- a checkout asks for a unique amount to the site's address;
+- a checkout asks for an exact, clean amount to the site's address ($0.01 at
+  $0.50 is Ӿ0.02), and the card shows "Pay $0.01 · Ӿ0.02";
+- test mode: the QR code is stamped "do not pay", with no `nano:` link and
+  no copy keys; the status is a polite live region; "Details" is a closed
+  button that Enter opens;
+- Cancel closes the card, gives the focus back to the Unlock key, and frees
+  the amount at once;
 - an unconfirmed payment shows "confirming" and unlocks nothing;
 - a confirmed payment reloads the page with the paid part (about 2 s);
 - a payment already received by the wallet (history) also counts;
 - a shared link, a forged receipt, and one post's receipt on another post
   all stay locked;
-- no nonce → 403; a changed offer → 400; a used payment on a second
-  checkout → 409; another browser gets 403 and no receipt;
-- node down → 503 and nothing unlocks;
+- no nonce → 403; a changed offer → 400; a paid amount comes back for the
+  next checkout, and the payment that paid it does not pay that one; while
+  it is held, the next checkout gets one step more; a used payment never
+  pays a second checkout; another browser gets 403 and no receipt;
+- Cancel: only the starting browser; the amount goes to the next checkout;
+  after the payment arrived, Cancel unlocks instead;
+- node down → 503 and nothing unlocks, and Cancel keeps the amount held;
 - 48 fast polls in 6 s cause 2 `receivable` and 2 history calls;
-- the 21st checkout from one address in 10 minutes → 429;
+- the 11th open checkout from one address → 429; the 21st checkout from one
+  address in 10 minutes → 429;
+- 60 parallel checkouts (60 visitors) get Ӿ0.1000 … Ӿ0.1059, no two alike;
+  50 more at once: 40 get the last steps, 10 are told "busy";
 - the settings page refuses a mistyped address and lists sales;
 - the block loads in the editor with no warnings or script errors.
 

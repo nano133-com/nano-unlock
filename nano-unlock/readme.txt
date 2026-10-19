@@ -4,7 +4,7 @@ Tags: paywall, micropayments, nano, xno, pay per post
 Requires at least: 6.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.1
+Stable tag: 0.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,10 +16,13 @@ Stage: Alpha. What this means: https://nano133.com/stages
 
 Wrap the paid part of a post in the "Nano Unlock (paid part)" block, or in `[nano_unlock price="0.05"] … [/nano_unlock]`. Readers see the price and an Unlock button, pay by QR code or "Open in wallet", and the part appears about two seconds after the payment confirms.
 
+The checkout is short: the QR code, one line ("Pay $0.05 · Ӿ0.1512"), one "Open in wallet" key and one status line. The address and the amount, each with a Copy button, are under "Details".
+
 * The money goes straight to your Nano address. The plugin never holds a key or funds.
 * No account, no card, no fee: a 1¢ sale pays you 1¢.
 * The paid part is rendered on the server only after payment. It is never hidden with CSS, and it is stored apart from the post, so feeds, search, revisions and a deactivated plugin never show it.
 * Your site verifies each payment itself with a Nano node (the default is node.nano133.com; any node works, and a second node can be required to agree).
+* Each checkout asks for an exact, short amount: at most four decimals, so a wallet that rounds to four decimals still sends it exactly.
 * One payment unlocks one item, once. The buyer keeps access on that browser through a signed cookie.
 
 = Credits =
@@ -41,7 +44,23 @@ To check it before you sell, open the post in a private window, unlock it with a
 
 = What if a reader sends a rounded amount? =
 
-Each checkout asks for a unique amount: the price plus a tiny tail in its last digits, which is how the payment is matched. The QR code and "Open in wallet" fill it in, and the full amount has a Copy button. A rounded or retyped amount does not match and unlocks nothing; you see the payment in your wallet and can refund it.
+Each checkout asks for an exact amount with at most four decimals, for example Ӿ0.1512: the price in XNO, rounded up to 0.0001 XNO. While another open checkout already holds that amount, the next one asks for 0.0001 XNO more, and so on (at most Ӿ0.0099 more; when all of those are held, the reader is asked to try again in a moment). That is how a payment is matched to its checkout, with no memo and no key on your site.
+
+So a wallet that shows or rounds amounts to four decimals still sends the exact amount. (Some wallets cut amounts to four decimals. Cake Wallet did so with older versions of this plugin, whose amounts had a tail of more digits.) The QR code and "Open in wallet" fill the amount in, and under "Details" it has a Copy button. A payment of any other amount does not match and unlocks nothing; you see it in your wallet and can refund it.
+
+Which wallets were checked: version 0.1.2 was tested with a mock node only. No wallet app has paid one of its four-decimal amounts yet, and Cake Wallet itself was not tested with any version.
+
+= What does Cancel do? =
+
+Cancel ends the checkout, and its amount is free at once for the next reader. If the payment has already arrived, Cancel unlocks the part instead; if it is still confirming, the checkout stays open. A payment sent after Cancel no longer counts for that checkout; you see it in your wallet and can refund it. A reader who just leaves the page cancels nothing: the checkout's amount stays reserved, and its payment counts, for the 15 minutes of the checkout and one hour more.
+
+= Can a payment unlock the wrong checkout? =
+
+Two open checkouts never ask for the same amount (a unique key in the database holds it), and a payment counts only when it is a confirmed send of exactly that amount to your address, which your node first saw after the checkout started. A payment that already unlocked one checkout never counts again. A payment that someone else happens to send to your address, of exactly the amount an open checkout asks for, would unlock that checkout; you still receive that payment. To make that as unlikely as possible, use an address only for this plugin.
+
+= What does the plugin keep about readers? =
+
+For each checkout: the item, the price, the amount, a hash of a random token in the reader's browser, and, only while its amount is reserved, a keyed hash of the reader's IP address (so that one visitor can hold at most 10 open checkouts). A paid checkout also keeps the payer's Nano address and the payment's block hash, which are public on the Nano network. The reader's access is a signed cookie in their own browser.
 
 = What happens if I deactivate the plugin? =
 
@@ -60,7 +79,7 @@ A cache that ignores these signals (a CDN or a reverse proxy set to cache every 
 == Screenshots ==
 
 1. A post with a paid part, as a reader sees it: the free part, the price and the Unlock button.
-2. The checkout: a QR code, "Open in wallet", the exact amount and the address, each with a Copy button.
+2. The checkout: the QR code, "Pay $0.05 · Ӿ0.05", "Open in wallet" and the status line. The address and the amount, each with a Copy button, are under Details.
 3. About a second after the payment confirms, the paid part appears on the reader's page.
 4. The "Nano Unlock (paid part)" block in the editor, with its price in the block settings.
 5. The settings page: your Nano address, the default price, the node, and the recent sales.
@@ -73,7 +92,7 @@ This plugin connects to the services below from your site's server. Readers' bro
 
 Needed to check payments: the site asks a Nano node whether your address received a confirmed payment of a checkout's exact amount. The default node is run by nano133.com; you can set any other Nano node, and an optional second node, on the settings page. The plugin then calls the node(s) you set instead.
 
-* When: while a reader's checkout waits for a payment (the reader's page asks your site every 2 seconds; your site asks the node at most every 3 seconds), and once more for each payment it finds, to confirm it (on both nodes when a second node is set). Nothing is sent when no checkout is open.
+* When: while a reader's checkout waits for a payment (the reader's page asks your site every 2 seconds; your site asks the node at most every 3 seconds), once more for each payment it finds, to confirm it (on both nodes when a second node is set), and once when a reader presses Cancel. Nothing is sent when no checkout is open.
 * What is sent: your public Nano address and the smallest open checkout amount (the `receivable` and `account_history` calls), and a payment's block hash (the `block_info` call). The request's user agent names the plugin, its version and your site's home URL. Like any web service, the node sees your server's IP address.
 * nano133.com terms: https://nano133.com/terms
 * nano133.com privacy policy: https://nano133.com/privacy#others
@@ -91,6 +110,19 @@ Needed to turn a price in US dollars into XNO. The plugin uses the median of the
 The checkout's QR code is drawn in the reader's browser by a script shipped with the plugin; it calls no service. "Open in wallet" opens a nano: link in the reader's own wallet app.
 
 == Changelog ==
+
+= 0.1.2 =
+* Clean amounts: each checkout asks for the price rounded up to 0.0001 XNO, with no random tail, so a wallet that rounds to four decimals (Cake Wallet did) pays it exactly. Open checkouts at the same price get 0.0001 XNO more each (at most Ӿ0.0099 more), reserved by a unique key in the database. The match is still exact.
+* An amount is free again at once when its checkout is paid or cancelled; an unpaid one stays reserved for the checkout's 15 minutes, the hour for late payments and 5 minutes more.
+* The checkout card is simple: the QR code, "Pay $0.05 · Ӿ0.1512", one "Open in wallet" key and one status line. The address, the amount (each with Copy), the expiry and one sentence of help are under "Details", closed at first.
+* Cancel now ends the checkout on the site (POST /nano-unlock/v1/cancel). If the payment has already arrived, it unlocks instead.
+* A payment counts only when the node knows when it saw it (after the checkout started), and a payment that already unlocked a checkout is never matched again.
+* One visitor can hold at most 10 open checkouts at once. When every amount near a price is reserved, the reader is asked to try again in a moment.
+* Prices show their cents: $0.10, not $0.1.
+* In Twenty Twenty-Three, "Open in wallet" is white on teal again (the theme's link colour no longer wins). The keys pass WCAG AA contrast.
+* Screen readers hear each status change once; "Details" is a button with aria-expanded; the moving dot stops with reduced motion.
+* Test mode: the QR code holds only "TEST MODE: do not pay", stamped and blurred, and the wallet and copy keys are off.
+* Database version 2 (a column for the visitor limit). Checkouts that were open during the update keep their exact amount until they end.
 
 = 0.1.1 =
 * The price requests to CoinGecko, Kraken and KuCoin carry the plugin's own user agent ("NanoUnlock" and its version) instead of WordPress's default, which names the site.
