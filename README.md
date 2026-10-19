@@ -73,33 +73,34 @@ the paid part with a dashed border and a note, so they can check it.
    price to XNO at the current rate (the median of CoinGecko, Kraken and
    KuCoin, cached for five minutes; the last good rate is used for up to a
    day if all fail) and rounds it up to 0.0001 XNO (a "step"). That **clean
-   amount**, with no tail, is the checkout's own amount while no other open
-   checkout holds it; otherwise the checkout gets the next free step
-   (Ӿ0.1512, Ӿ0.1513, …). So an amount has **at most four decimals**, and a
-   wallet that rounds to four decimals (Cake Wallet cut 0.1.1's tailed
-   amounts) still sends it exactly. The amount identifies the payment, so no
-   memo is needed, and the match stays exact: no tolerance.
+   amount** is the checkout's own amount while no other open checkout holds
+   it; otherwise the checkout gets the next free step (0.1512 XNO, 0.1513
+   XNO, …). So an amount has **at most four decimals**, and a wallet that
+   rounds to four decimals still sends it exactly. The amount identifies the
+   payment, so no memo is needed, and the match stays exact: no tolerance.
 
    **The reservation.** `amount_lock`, a unique key in the checkouts table,
    holds each checkout's amount. `Nano_Unlock_Store::create()` reads which
-   of the price's 100 steps are held, then inserts the lowest free one; when
+   of the price's steps are held, then inserts the lowest free one; when
    two readers pick the same free step at the same instant, the unique key
    refuses the second insert and that reader moves on to the next step
    (PHPUnit proves it with 24 parallel processes on one database, and the
-   end-to-end test with 110 parallel requests on MySQL). An amount is freed
-   at once when its checkout is paid or cancelled. An unpaid amount stays
-   held for the checkout's 15 minutes, the hour for late payments and 5
-   minutes more (`HOLD_AFTER`, longer than the 2-minute clock allowance
-   below), so a late payment can never meet a new checkout that got its
-   amount. At most 100 steps (Ӿ0.0099 above the price): when all are held,
-   the reader gets "Busy right now … Try again in a moment" (HTTP 503) and
-   nothing is held. One visitor (an IP address, or an IPv6 /64) may hold at
+   end-to-end test with 110 parallel requests on MariaDB). An amount is
+   freed at once when its checkout is paid, and 3 minutes after a cancel
+   (`CANCEL_HOLD`). An unpaid amount stays held for the checkout's 15
+   minutes, the hour for late payments and 5 minutes more (`HOLD_AFTER`,
+   longer than the 2-minute clock allowance below), so a late payment can
+   never meet a new checkout that got its amount. The steps above a price
+   add at most a tenth of it (`MAX_EXTRA_PERCENT`; a 1¢ price of 0.0304 XNO
+   gets at most 30 steps more) and never more than 0.0099 XNO (`MAX_STEPS`,
+   100 amounts): when all are held, the reader gets "Busy right now … Try
+   again in a moment" (HTTP 503) and nothing is held. One visitor (an IP address, or an IPv6 /64) may hold at
    most 10 amounts at once, so one visitor alone can't use up a price's
    steps; the count uses a keyed hash of the address, stored only while the
    amount is held.
 
    The reader gets a QR code and a `nano:` link ("Open in wallet"), which
-   fill in the exact amount, and one line: "Pay $0.05 · Ӿ0.1512". The
+   fill in the exact amount, and one line: "Pay $0.05 · 0.1512 XNO". The
    address and the amount with Copy buttons, the expiry and one sentence of
    help are under "Details". A payment of a wrong amount unlocks nothing;
    the site owner sees it in the wallet and can refund it.
@@ -164,23 +165,27 @@ still counts (the amount stays reserved, and 5 minutes more).
 started the checkout) first asks the node, without the shared scan: if the
 payment is there, the checkout is paid and unlocks; if it is seen but not
 confirmed, the checkout stays open; if the node does not answer, nothing is
-cancelled and the amount stays held. Otherwise the checkout ends and its
-amount is free at once. A reader who just leaves the page cancels nothing.
+cancelled and the amount stays held. Otherwise the checkout ends; its
+amount stays held for 3 more minutes, then it is free. A payment the node
+first sees within a minute after Cancel can then never count for the next
+checkout that gets the amount. A reader who just leaves the page cancels
+nothing.
 
 **Coincidences.** A payment matches only an open checkout that holds exactly
 its amount, sent to the site's address after that checkout started. The
 plugin's own payments can't cross: two open checkouts never share an amount,
 and a used payment is skipped. Only an outside payment to the same address,
 of exactly that 4-decimal amount, during a reader's checkout, would unlock
-it; the owner still receives that money. Round amounts (Ӿ0.1, Ӿ1) are the
+it; the owner still receives that money. Round amounts (0.1 XNO, 1 XNO) are the
 likely ones; an address used only for the plugin has none.
 
 ### Wallets
 
-Amounts have at most four decimals, because some wallets round to four (Cake
-Wallet cut a tailed amount of 0.1.1, so that payment did not match). Version
-0.1.2 was tested with the mock node only: no wallet app has paid one of its
-amounts yet, and Cake Wallet itself was not tested with any version.
+Amounts have at most four decimals, because some wallets round to four.
+Before 0.2.0 amounts had more digits, and Cake Wallet cut one to four
+decimals, so that payment did not match. Version 0.2.0 was tested with the
+mock node only: no wallet app has paid one of its amounts yet, and Cake
+Wallet itself was not tested with any version.
 
 ### Node load
 
@@ -275,12 +280,12 @@ shortcode and a block) and checks:
 
 - the paid parts are not in the HTML, the feed or the core REST API;
 - a checkout asks for an exact, clean amount to the site's address ($0.01 at
-  $0.50 is Ӿ0.02), and the card shows "Pay $0.01 · Ӿ0.02";
+  $0.50 is 0.02 XNO), and the card shows "Pay $0.01 · 0.02 XNO";
 - test mode: the QR code is stamped "do not pay", with no `nano:` link and
   no copy keys; the status is a polite live region; "Details" is a closed
   button that Enter opens;
-- Cancel closes the card, gives the focus back to the Unlock key, and frees
-  the amount at once;
+- Cancel closes the card and gives the focus back to the Unlock key; the
+  amount stays held for 3 minutes, then the next checkout gets it;
 - an unconfirmed payment shows "confirming" and unlocks nothing;
 - a confirmed payment reloads the page with the paid part (about 2 s);
 - a payment already received by the wallet (history) also counts;
@@ -290,13 +295,14 @@ shortcode and a block) and checks:
   next checkout, and the payment that paid it does not pay that one; while
   it is held, the next checkout gets one step more; a used payment never
   pays a second checkout; another browser gets 403 and no receipt;
-- Cancel: only the starting browser; the amount goes to the next checkout;
-  after the payment arrived, Cancel unlocks instead;
+- Cancel: only the starting browser; the amount is held for 3 minutes, then
+  goes to the next checkout; after the payment arrived, Cancel unlocks
+  instead;
 - node down → 503 and nothing unlocks, and Cancel keeps the amount held;
 - 48 fast polls in 6 s cause 2 `receivable` and 2 history calls;
 - the 11th open checkout from one address → 429; the 21st checkout from one
   address in 10 minutes → 429;
-- 60 parallel checkouts (60 visitors) get Ӿ0.1000 … Ӿ0.1059, no two alike;
+- 60 parallel checkouts (60 visitors) get 0.1000 … 0.1059 XNO, no two alike;
   50 more at once: 40 get the last steps, 10 are told "busy";
 - the settings page refuses a mistyped address and lists sales;
 - the block loads in the editor with no warnings or script errors.
