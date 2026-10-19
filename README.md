@@ -116,8 +116,16 @@ the paid part with a dashed border and a note, so they can check it.
    address**, first seen by the node **after the checkout started** (its
    `local_timestamp`, with 2 minutes for the clocks; a block without one
    never counts). With a second node, both must agree.
-4. **Once.** The payment's block hash is stored with a unique key, so one
-   payment unlocks one checkout, once.
+4. **Once, on this site.** The payment's block hash is stored with a unique
+   key, so on one site one payment unlocks one checkout, once. A confirmed
+   block's answer is kept for an hour, so an older payment of a repeated
+   amount costs one `block_info` call, not one per poll. **One address
+   serves one site only:** the node can't tell which site a payment was
+   for, and two sites that sell at the same price ask for the same amount,
+   so one payment can unlock a checkout on both (also two sites of one
+   network, a shop on the same address, and each Playground tab of the
+   demo). The settings page says so, and on a network it warns when another
+   site has the same address.
 5. **The receipt.** Only the browser that started the checkout (a random
    httpOnly cookie) gets the receipt. All of a browser's receipts share one
    httpOnly cookie, `nano_unlock_receipts`, signed with the site's key
@@ -172,12 +180,33 @@ checkout that gets the amount. A reader who just leaves the page cancels
 nothing.
 
 **Coincidences.** A payment matches only an open checkout that holds exactly
-its amount, sent to the site's address after that checkout started. The
-plugin's own payments can't cross: two open checkouts never share an amount,
-and a used payment is skipped. Only an outside payment to the same address,
-of exactly that 4-decimal amount, during a reader's checkout, would unlock
-it; the owner still receives that money. Round amounts (0.1 XNO, 1 XNO) are the
-likely ones; an address used only for the plugin has none.
+its amount, sent to the site's address after that checkout started. On one
+site, two open checkouts never share an amount, and a used payment is
+skipped. A payment outside its own checkout's time can unlock another
+reader's checkout of the same amount: a second send, a send more than a
+minute after Cancel, or a send more than an hour after its checkout
+expired. So can an outside payment to the same address of exactly that
+4-decimal amount, and any payment on a second site that uses the same
+address. The owner still receives every payment. Round amounts (0.1 XNO,
+1 XNO) are the likely ones; an address used only by the plugin on one site
+has none.
+
+**The node's clock.** "After the checkout started" uses the node's
+`local_timestamp` and the site's clock, with 2 minutes of allowance. A node
+clock more than 2 minutes behind makes early payments not count. After a
+long node outage, a payment the node catches up on may get the catch-up's
+time (not tested).
+
+**Capacity.** All posts at one price share its amounts. At $0.33 per XNO a
+1¢ price has 31 and a 5¢ price 100; at $3.30 per XNO a 1¢ price has 4. A
+reader who leaves without paying or cancelling holds an amount for 80
+minutes, so at most amounts × 60 / 80 such readers an hour fit at one
+price; after that, new readers get "busy" for up to 80 minutes.
+
+**The scan.** The node gives at most 50 receivable sends and 50 history
+entries (the `node.nano133.com` gateway's cap; `receivable` has no
+`offset`). An owner whose wallet leaves more than 50 sends at or above the
+prices unreceived can hide a new payment until the wallet receives.
 
 ### Wallets
 
@@ -201,9 +230,16 @@ node.
 ## Security
 
 - Every REST call needs the page's REST nonce.
-- Rate limits per visitor address: 20 checkouts per 10 minutes (600 per 10
-  minutes for everyone), at most 10 open checkouts at once, and 180 payment
-  checks (and cancels) per minute.
+- Rate limits per visitor: 20 checkouts per 10 minutes (600 per 10 minutes
+  for everyone), at most 10 open checkouts at once, and 180 payment checks
+  (and cancels) per minute. A visitor is a keyed hash of the address
+  (`wp_hash`), an IPv6 address counted by its /64; no counter is named
+  after an unkeyed hash of an address. The count of open checkouts and the
+  new checkout run under a per-visitor `GET_LOCK` (MySQL, MariaDB), so
+  parallel requests can't pass the limit together; SQLite (Playground) has
+  no named locks and runs without.
+- A checkout request that the browser marks `Sec-Fetch-Site: cross-site`
+  (a page on another site) is refused.
 - The visitor address is `REMOTE_ADDR`. Forwarded headers are not trusted,
   because anyone can send them. Behind a proxy or CDN, set the real header
   with the `nano_unlock_client_ip` filter.
@@ -248,6 +284,9 @@ node.
   from the exchange's address. The checkout asks readers to pay from a
   wallet they control.
 - Nobody can stop a reader from copying text they have unlocked.
+- On a WordPress network, each site has its own table and daily clean-up,
+  and deleting the plugin removes the data of the main site only (when its
+  box is ticked); the other sites' tables and settings stay.
 
 ## Development
 
@@ -256,7 +295,7 @@ npm install
 composer install
 npm start          # wp-env on http://localhost:8888 (admin / password), copies the plugin in
 npm run sync       # copy the plugin into wp-env again after a change
-npm test           # PHPUnit: amounts and their reservation (24 parallel processes on SQLite), receipts and offers, addresses, the payment rules, rendering, the REST routes, settings
+npm test           # PHPUnit: amounts and their reservation (24 parallel processes on SQLite), the table update, receipts and offers, addresses, the payment rules and the block cache, rendering, the REST routes, settings
 npm run test:wp    # integration tests inside WordPress: paid-part storage, migration, amounts on MySQL and the update from 0.1.1, uninstall
 npm run lint       # PHPCS with the WordPress Coding Standards and PHPCompatibilityWP
 npm run e2e        # end-to-end test against a MOCK node (no real network, no real money)
@@ -297,12 +336,15 @@ shortcode and a block) and checks:
   pays a second checkout; another browser gets 403 and no receipt;
 - Cancel: only the starting browser; the amount is held for 3 minutes, then
   goes to the next checkout; after the payment arrived, Cancel unlocks
-  instead;
+  instead; with the node down, Cancel in the browser keeps the checkout and
+  the payment that arrives later still unlocks;
 - node down → 503 and nothing unlocks, and Cancel keeps the amount held;
 - 48 fast polls in 6 s cause 2 `receivable` and 2 history calls;
 - the 11th open checkout from one address → 429; the 21st checkout from one
   address in 10 minutes → 429;
 - 60 parallel checkouts (60 visitors) get 0.1000 … 0.1059 XNO, no two alike;
+- 24 parallel checkouts from one visitor: exactly 10 get an amount; a
+  checkout marked `Sec-Fetch-Site: cross-site` → 403;
   50 more at once: 40 get the last steps, 10 are told "busy";
 - the settings page refuses a mistyped address and lists sales;
 - the block loads in the editor with no warnings or script errors.
@@ -349,7 +391,9 @@ https://playground.wordpress.net/#<the blueprint JSON, URL-encoded>
 **The demo takes real money.** Its checkout is a real one: a visitor who
 pays sends about 1 cent of real XNO to the demo wallet, and the paid part
 unlocks in that Playground tab. The sample post starts with a boxed note
-that says so, and that paying is optional.
+that says so, and that paying is optional. Each Playground tab is its own
+site with the same demo address and price, so one payment can also unlock
+an open checkout of the same amount in another demo tab.
 
 Playground runs PHP in the browser, so the plugin's calls to the node and
 the price feeds are browser requests there, and they need CORS. The node
