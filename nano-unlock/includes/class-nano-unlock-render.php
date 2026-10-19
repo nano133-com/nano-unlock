@@ -337,6 +337,7 @@ final class Nano_Unlock_Render {
 					'busy'     => __( 'The network check is busy; still trying.', 'nano-unlock' ),
 					'reload'   => __( 'This page is out of date. Reload it and try again.', 'nano-unlock' ),
 					'cancel'   => __( 'Cancel', 'nano-unlock' ),
+					'stay'     => __( 'Not cancelled: the check is busy. This checkout stays open, and its payment still counts.', 'nano-unlock' ),
 					'retry'    => __( 'Try again', 'nano-unlock' ),
 					'kept'     => __( 'Your payment is recorded, but this browser did not keep the unlock cookie. Allow cookies for this site, then press Try again.', 'nano-unlock' ),
 					'stamp'    => __( 'TEST MODE: do not pay', 'nano-unlock' ),

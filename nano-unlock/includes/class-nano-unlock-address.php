@@ -27,6 +27,17 @@ final class Nano_Unlock_Address {
 	}
 
 	/**
+	 * Whether $address is the "burn" address (a public key of all zeros): no one holds its key,
+	 * so money sent there is lost for good.
+	 *
+	 * @param string $address The address.
+	 * @return bool
+	 */
+	public static function is_burn( $address ) {
+		return str_repeat( "\0", 32 ) === self::public_key( $address );
+	}
+
+	/**
 	 * The address's 32-byte public key (raw), or null when the address is not valid.
 	 *
 	 * @param string $address The address.

@@ -25,6 +25,7 @@ final class RestTest extends TestCase {
 		nano_unlock_wp_reset();
 		nano_unlock_wp_post( self::POST );
 		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_settings'] = array( 'address' => self::SITE );
+		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_db_version'] = Nano_Unlock_Store::DB_VERSION;
 		$GLOBALS['nano_unlock_wp']['transients']['nano_unlock_rate']  = 0.5;
 		$this->cookies_work = true;
 		add_filter(
@@ -229,6 +230,32 @@ final class RestTest extends TestCase {
 		$this->assertSame( $c['amount'], $row['amount_lock'] );
 	}
 
+	public function test_a_page_on_another_site_cannot_start_a_checkout() {
+		$cross = Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer() ), array( 'sec_fetch_site' => 'cross-site' ) ) );
+		$this->assertError( $cross, 403, 'nano_unlock' );
+		$this->assertSame( array(), $GLOBALS['wpdb']->rows, 'nothing is held' );
+		$same = Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer() ), array( 'sec_fetch_site' => 'same-origin' ) ) );
+		$this->assertInstanceOf( WP_REST_Response::class, $same );
+	}
+
+	public function test_no_checkout_while_the_table_update_failed() {
+		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_db_version'] = '1';
+		$res = Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer() ) ) );
+		$this->assertError( $res, 503, 'nano_unlock' );
+		$this->assertStringContainsString( 'not ready to sell', $res->get_error_message() );
+	}
+
+	public function test_the_limits_never_name_the_readers_address() {
+		$this->checkout();
+		$ip = $_SERVER['REMOTE_ADDR'];
+		foreach ( array_keys( $GLOBALS['nano_unlock_wp']['transients'] ) as $name ) {
+			foreach ( array( 'checkout', 'claim' ) as $scope ) {
+				$this->assertStringNotContainsString( substr( hash( 'sha256', $scope . '|' . $ip . '|600|' . (int) floor( time() / 600 ) ), 0, 32 ), $name, 'no unkeyed hash of the IP address' );
+			}
+		}
+		$this->assertNull( $GLOBALS['wpdb']->rows[ array_keys( $GLOBALS['wpdb']->rows )[0] ]['cancelled_at'] );
+	}
+
 	public function test_cancel_after_the_late_window_asks_no_node() {
 		$c = $this->checkout();
 		$GLOBALS['wpdb']->set( $c['id'], array( 'expires_at' => time() - Nano_Unlock::LATE_SECONDS - 1 ) );
@@ -283,7 +310,7 @@ final class RestTest extends TestCase {
 		}
 		$res = Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer() ) ) );
 		$this->assertError( $res, 503, 'nano_unlock' );
-		$this->assertStringContainsString( 'Try again in a moment', $res->get_error_message() );
+		$this->assertStringContainsString( 'Try again in a few minutes', $res->get_error_message() );
 	}
 
 	public function test_no_paid_answer_when_the_receipt_cookie_cannot_be_set() {

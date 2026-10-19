@@ -224,6 +224,31 @@ await cx.close();
 const passCancelHold = () => wp("db", "query", "UPDATE wp_nano_unlock_checkouts SET cancelled_at = cancelled_at - 181 WHERE status = 'cancelled'");
 passCancelHold();
 
+// Cancel while the node is down: the site can't cancel (503), so the page keeps the checkout and keeps asking.
+// The payment that then arrives still unlocks: it is never lost.
+const cx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+const cp2 = await cx2.newPage();
+await cp2.goto(urlB);
+const checkoutD = cp2.waitForResponse((r) => r.url().includes("nano-unlock/v1/checkout"));
+await cp2.locator(".nano-unlock__button").click();
+const resD = await (await checkoutD).json();
+await cp2.locator(".nano-unlock__card").waitFor();
+await mock("/__down", { down: true });
+const cancelDown = cp2.waitForResponse((r) => r.url().includes("nano-unlock/v1/cancel"));
+await cp2.locator(".nano-unlock__cancel").click();
+const cancelDownStatus = (await cancelDown).status();
+await cp2.waitForTimeout(300);
+const keptD = await cp2.evaluate((item) => sessionStorage.getItem("nano-unlock:" + item), await cp2.locator(".nano-unlock--locked").getAttribute("data-nano-unlock-item"));
+const saidD = (await cp2.locator(".nano-unlock__status [role='status']").textContent()) ?? "";
+check(cancelDownStatus === 503 && (await cp2.locator(".nano-unlock__card").count()) === 1 && !!keptD && keptD.includes(resD.id) && /Not cancelled|busy/.test(saidD), `node down: Cancel answers ${cancelDownStatus}, and the page keeps the checkout (card, sessionStorage) and says "${saidD}"`);
+await mock("/__down", { down: false });
+await mock("/__pay", { to: SITE_ADDR, amount: resD.amount, from: BUYER2 });
+await cp2.waitForURL(/nano_unlocked=/, { timeout: 15000 }).then(
+  async () => check((await cp2.content()).includes(SECRET_B), "the payment that arrives after that Cancel still unlocks the part"),
+  () => check(false, "the payment that arrives after a Cancel the site refused still unlocks the part"),
+);
+await cx2.close();
+
 // ---- 4. The owner's wallet already received it (history path), on the block post -----------------------
 console.log("\n— the wallet received the payment before the check (history)");
 await page.goto(urlB);
@@ -361,11 +386,22 @@ const second = await burst(60, 50);
 const got2 = second.filter((r) => r.status === 200).map((r) => r.data.amount);
 const busy = second.filter((r) => r.status === 503);
 check(got2.length === 40 && busy.length === 10 && new Set([...got, ...got2]).size === 100, `50 more at once: 40 get the last steps, 10 are told "busy" (${got2.length} + ${busy.length})`);
-check(busy.every((r) => /Try again in a moment/.test(r.data.message)), `the busy answer: "${busy[0]?.data.message}"`);
+check(busy.every((r) => /Try again in a few minutes/.test(r.data.message)), `the busy answer: "${busy[0]?.data.message}"`);
 const locks = wp("db", "query", "SELECT COUNT(DISTINCT amount_lock), COUNT(*), MAX(CAST(amount_lock AS DECIMAL(40,0))) FROM wp_nano_unlock_checkouts WHERE amount_lock IS NOT NULL", "--skip-column-names").split(/\s+/);
 check(locks[0] === "100" && locks[1] === "100" && locks[2] === STEP(amountB, 99), `the table holds 100 different amounts, the highest 0.1099 XNO (${locks.join(" ")})`);
 wp("db", "query", "DELETE FROM wp_nano_unlock_checkouts WHERE status <> 'paid'");
 wp("transient", "delete", "--all");
+
+// One visitor, 24 requests at the same instant: the count of open checkouts and the new checkout run under
+// one lock per visitor, so exactly 10 get an amount.
+const one = await Promise.all(Array.from({ length: 24 }, () => api("checkout", { offer: offerB }, { ip: "10.88.0.1" })));
+const oneOk = one.filter((r) => r.status === 200).length;
+check(oneOk === 10 && one.every((r) => r.status === 200 || r.status === 429), `one visitor, 24 parallel checkouts: ${oneOk} get an amount (the limit is 10), the others 429`);
+wp("db", "query", "DELETE FROM wp_nano_unlock_checkouts WHERE status <> 'paid'");
+wp("transient", "delete", "--all");
+// A page on another site can't start checkouts here (the browser marks such a request "cross-site").
+const cross = await fetch(`${SITE}/?rest_route=/nano-unlock/v1/checkout`, { method: "POST", headers: { "content-type": "application/json", "x-wp-nonce": nonce, "sec-fetch-site": "cross-site" }, body: JSON.stringify({ offer: offerB }) });
+check(cross.status === 403, `a checkout marked "Sec-Fetch-Site: cross-site" is refused (${cross.status})`);
 
 // ---- 6. The settings page -------------------------------------------------------------------------------
 console.log("\n— the settings page");

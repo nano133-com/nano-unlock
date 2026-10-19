@@ -23,7 +23,7 @@ defined( 'ABSPATH' ) || exit;
  *   amount at once, so a payment can match only one of them. The amount is
  *   freed (NULL: NULL values don't collide) at once when the checkout is paid,
  *   CANCEL_HOLD after it is cancelled, or when that time is over.
- * - `hash` is the payment's block hash, so one payment unlocks one checkout,
+ * - `hash` is the payment's block hash, so on this site one payment unlocks one checkout,
  *   once. A paid row is the record of the sale and is kept.
  */
 final class Nano_Unlock_Store {
@@ -74,11 +74,17 @@ final class Nano_Unlock_Store {
 	}
 
 	/**
-	 * Creates or updates the table.
+	 * Creates or updates the table. The version is recorded only when the table really has this
+	 * version's columns: an update that fails (a database user without ALTER, a lock) is tried
+	 * again later, and the settings screens say so (Nano_Unlock::db_notice()).
+	 *
+	 * @return bool Whether the table is ready.
 	 */
 	public static function install() {
 		global $wpdb;
-		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		if ( ! function_exists( 'dbDelta' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		}
 		$table   = self::table();
 		$charset = $wpdb->get_charset_collate();
 		dbDelta(
@@ -106,7 +112,26 @@ final class Nano_Unlock_Store {
   KEY visitor (visitor)
 ) {$charset};"
 		);
+		if ( ! self::table_ready() ) {
+			update_option( 'nano_unlock_db_error', time(), false );
+			return false;
+		}
+		delete_option( 'nano_unlock_db_error' );
 		update_option( 'nano_unlock_db_version', self::DB_VERSION, false );
+		return true;
+	}
+
+	/**
+	 * Whether the table has every column this version reads and writes.
+	 *
+	 * @return bool
+	 */
+	public static function table_ready() {
+		global $wpdb;
+		$suppress = $wpdb->suppress_errors( true );
+		$ok       = false !== $wpdb->query( $wpdb->prepare( 'SELECT id, visitor, cancelled_at FROM %i LIMIT 1', self::table() ) );
+		$wpdb->suppress_errors( $suppress );
+		return $ok;
 	}
 
 	/**
@@ -188,6 +213,41 @@ final class Nano_Unlock_Store {
 		global $wpdb;
 		$now = time();
 		$wpdb->query( $wpdb->prepare( "UPDATE %i SET amount_lock = NULL, visitor = NULL WHERE amount_lock IS NOT NULL AND ( expires_at < %d OR ( status = 'cancelled' AND cancelled_at < %d ) )", self::table(), $now - $late - self::HOLD_AFTER, $now - self::CANCEL_HOLD ) );
+	}
+
+	/**
+	 * Takes the database's named lock for one visitor (MySQL and MariaDB GET_LOCK), waiting up to 3 s.
+	 *
+	 * @param string $visitor The visitor's key.
+	 * @return bool|null True when taken, false when another request held it too long, null when the
+	 *                   database has no named locks (SQLite, as in WordPress Playground): go on without.
+	 */
+	public static function lock( $visitor ) {
+		global $wpdb;
+		$suppress = $wpdb->suppress_errors( true );
+		$got      = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', self::lock_name( $visitor ), 3 ) );
+		$wpdb->suppress_errors( $suppress );
+		return null === $got ? null : '1' === (string) $got;
+	}
+
+	/**
+	 * Gives the visitor's lock back.
+	 *
+	 * @param string $visitor The visitor's key.
+	 */
+	public static function unlock( $visitor ) {
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', self::lock_name( $visitor ) ) );
+	}
+
+	/**
+	 * A lock name for this site's table and one visitor (at most 64 characters).
+	 *
+	 * @param string $visitor The visitor's key.
+	 * @return string
+	 */
+	private static function lock_name( $visitor ) {
+		return 'nano_unlock_' . substr( hash( 'sha256', self::table() . '|' . $visitor ), 0, 32 );
 	}
 
 	/**

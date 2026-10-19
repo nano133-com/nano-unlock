@@ -41,7 +41,8 @@ final class Nano_Unlock_Settings {
 	 * @return bool
 	 */
 	public static function ready() {
-		return Nano_Unlock_Address::is_valid( self::get()['address'] ) && ( ! self::test_mode() || self::test_allowed() );
+		$address = self::get()['address'];
+		return Nano_Unlock_Address::is_valid( $address ) && ! Nano_Unlock_Address::is_burn( $address ) && ( ! self::test_mode() || self::test_allowed() );
 	}
 
 	/**
@@ -173,7 +174,9 @@ final class Nano_Unlock_Settings {
 		if ( 0 === strpos( $address, 'xrb_' ) ) {
 			$address = 'nano_' . substr( $address, 4 );
 		}
-		if ( '' === $address || Nano_Unlock_Address::is_valid( $address ) ) {
+		if ( Nano_Unlock_Address::is_burn( $address ) ) {
+			add_settings_error( self::OPTION, 'address', __( 'That is the burn address: nobody holds its key, so money sent there is lost for good. The old address is kept.', 'nano-unlock' ) );
+		} elseif ( '' === $address || Nano_Unlock_Address::is_valid( $address ) ) {
 			$out['address'] = $address;
 		} else {
 			add_settings_error( self::OPTION, 'address', __( 'That Nano address is not valid (check for a typo: the last 8 characters are a checksum). The old address is kept.', 'nano-unlock' ) );
@@ -244,6 +247,32 @@ final class Nano_Unlock_Settings {
 	}
 
 	/**
+	 * The other sites of this network that pay to the same address as this one (names for a notice).
+	 *
+	 * @return string[]
+	 */
+	private static function shared_with() {
+		$address = self::get()['address'];
+		if ( ! is_multisite() || '' === $address ) {
+			return array();
+		}
+		$out = array();
+		foreach ( get_sites(
+			array(
+				'number'       => 500,
+				'fields'       => 'ids',
+				'site__not_in' => array( get_current_blog_id() ),
+			)
+		) as $site_id ) {
+			$other = get_blog_option( $site_id, self::OPTION );
+			if ( is_array( $other ) && isset( $other['address'] ) && $other['address'] === $address ) {
+				$out[] = get_blog_option( $site_id, 'blogname' ) . ' (' . get_home_url( $site_id ) . ')';
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * Whether $url is an http(s) URL.
 	 *
 	 * @param string $url The URL.
@@ -274,7 +303,7 @@ final class Nano_Unlock_Settings {
 			return;
 		}
 		$help        = array(
-			'address' => __( 'Readers pay this address directly. The plugin never holds a key or any money.', 'nano-unlock' ),
+			'address' => __( 'Readers pay this address directly. The plugin never holds a key or any money. Use this address for this site only: another site, sub-site, shop or demo that sells with the same address can unlock its own checkout with a payment made here. A new account in your wallet app is enough.', 'nano-unlock' ),
 			'usd'     => __( 'Used when a paid part names no price. Readers pay the same value in XNO at the current rate.', 'nano-unlock' ),
 			'node'    => __( 'The node that proves payments. The default is the public node of nano133.com; any Nano node RPC works.', 'nano-unlock' ),
 			'node2'   => __( 'If set, a payment counts only when both nodes confirm it.', 'nano-unlock' ),
@@ -324,6 +353,14 @@ final class Nano_Unlock_Settings {
 			<?php if ( ! Nano_Unlock_Address::is_valid( self::get()['address'] ) ) : ?>
 				<div class="notice notice-warning inline"><p><?php esc_html_e( 'Add your Nano address to start selling. Until then, readers see the paid parts as "not for sale yet".', 'nano-unlock' ); ?></p></div>
 			<?php endif; ?>
+			<?php foreach ( self::shared_with() as $nano_unlock_other ) : ?>
+				<div class="notice notice-error inline"><p>
+				<?php
+				/* translators: %s: the name and address of another site in this network. */
+				echo esc_html( sprintf( __( 'Another site in this network uses the same Nano address: %s. One payment can then unlock a checkout on both sites. Give each site its own address.', 'nano-unlock' ), $nano_unlock_other ) );
+				?>
+				</p></div>
+			<?php endforeach; ?>
 			<form action="options.php" method="post">
 				<?php
 				settings_fields( 'nano_unlock' );
@@ -364,7 +401,7 @@ final class Nano_Unlock_Settings {
 				</table>
 			<?php endif; ?>
 			<h2><?php esc_html_e( 'How payments are checked', 'nano-unlock' ); ?></h2>
-			<p><?php esc_html_e( 'Each checkout asks for a short amount of its own: the price in XNO, rounded up to 0.0001 XNO, plus 0.0001 XNO for each other open checkout that already holds that amount. This site asks the node above for a confirmed payment of exactly that amount to your address, sent after the checkout started. One payment unlocks one item, once. The reader keeps access on that browser through a signed cookie.', 'nano-unlock' ); ?></p>
+			<p><?php esc_html_e( 'Each checkout asks for a short amount of its own: the price in XNO, rounded up to 0.0001 XNO, plus 0.0001 XNO for each other open checkout that already holds that amount. This site asks the node above for a confirmed payment of exactly that amount to your address, sent after the checkout started. On this site, one payment unlocks one item, once. The node cannot tell which site a payment was for, so the address must belong to this site alone. The reader keeps access on that browser through a signed cookie.', 'nano-unlock' ); ?></p>
 		</div>
 		<?php
 	}

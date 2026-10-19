@@ -53,6 +53,21 @@ final class SettingsTest extends TestCase {
 		$this->assertNull( Nano_Unlock_Settings::price( 'free' ) );
 	}
 
+	public function test_the_burn_address_is_refused() {
+		nano_unlock_wp_reset();
+		$burn = 'nano_1111111111111111111111111111111111111111111111111111hifc8npp';
+		$this->assertTrue( Nano_Unlock_Address::is_valid( $burn ), 'its checksum is right' );
+		$this->assertTrue( Nano_Unlock_Address::is_burn( $burn ) );
+		$this->assertFalse( Nano_Unlock_Address::is_burn( 'nano_3khpd7q3dzrbcae18bmpidbcrj5mn1n1jnkidup7acocia1b966y88czr5if' ) );
+		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_settings'] = array( 'address' => 'nano_3khpd7q3dzrbcae18bmpidbcrj5mn1n1jnkidup7acocia1b966y88czr5if' );
+		$out = Nano_Unlock_Settings::sanitize( array( 'address' => $burn, 'usd' => '0.05' ) );
+		$this->assertSame( 'nano_3khpd7q3dzrbcae18bmpidbcrj5mn1n1jnkidup7acocia1b966y88czr5if', $out['address'], 'the old address is kept' );
+		$this->assertStringContainsString( 'burn address', $GLOBALS['nano_unlock_wp']['settings_errors']['address'] );
+		// Set some other way (a database edit, an old option): the site still does not sell.
+		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_settings'] = array( 'address' => $burn );
+		$this->assertFalse( Nano_Unlock_Settings::ready() );
+	}
+
 	public function test_array_values_are_refused_without_a_warning() {
 		nano_unlock_wp_reset();
 		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_settings'] = array(

@@ -386,6 +386,14 @@
 			cancel.addEventListener( 'click', function () {
 				cancel.disabled = true;
 				stop();
+				// Not cancelled: the checkout stays (here and on the site), and the page keeps asking for its payment.
+				function keep( text, kind ) {
+					cancel.disabled = false;
+					stopped = false;
+					say( text, kind );
+					clock = setInterval( paint, 1000 );
+					next();
+				}
 				api( 'cancel', { id: c.id } ).then(
 					function ( res ) {
 						var d = res.data || {};
@@ -393,21 +401,30 @@
 							unlocked();
 							return;
 						}
-						if ( res.status === 200 && d.pending ) {
-							// The payment is already on its way: keep the checkout.
-							cancel.disabled = false;
-							stopped = false;
-							say( t.pending, 'pending' );
-							clock = setInterval( paint, 1000 );
-							next();
+						// Only the site's "cancelled" (or a checkout it does not know) ends the checkout here.
+						if ( ( res.status === 200 && d.cancelled ) || res.status === 404 ) {
+							close();
+							button.focus();
 							return;
 						}
-						close();
-						button.focus();
+						if ( d.code === 'nano_unlock_receipt' ) {
+							stuck( d.message || t.kept );
+							return;
+						}
+						if ( d.code === 'nano_unlock_nonce' || d.code === 'rest_cookie_invalid_nonce' ) {
+							fail( t.reload, true );
+							return;
+						}
+						if ( res.status === 200 && d.pending ) {
+							// The payment is already on its way.
+							keep( t.pending, 'pending' );
+							return;
+						}
+						// The node or the site is busy, or a limit was reached: nothing was cancelled.
+						keep( t.stay, 'busy' );
 					},
 					function () {
-						close();
-						button.focus();
+						keep( t.stay, 'busy' );
 					}
 				);
 			} );

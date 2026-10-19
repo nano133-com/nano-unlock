@@ -85,9 +85,14 @@ final class Nano_Unlock_Rest {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public static function checkout( WP_REST_Request $request ) {
-		$ip = Nano_Unlock_Limit::client_ip();
+		// A page on another site must not start checkouts here from its own visitors' browsers (each from its
+		// own address). Browsers say where a request comes from; this site's own script is "same-origin".
+		if ( 'cross-site' === (string) $request->get_header( 'sec_fetch_site' ) ) {
+			return self::error( 403, __( 'A checkout can start only from this site\'s own pages.', 'nano-unlock' ) );
+		}
+		$visitor = Nano_Unlock_Limit::visitor();
 		// Each checkout holds an amount for over an hour, so starting them is limited.
-		if ( ! Nano_Unlock_Limit::allow( 'checkout', 20, 10 * MINUTE_IN_SECONDS, $ip ) || ! Nano_Unlock_Limit::allow( 'checkout', 600, 10 * MINUTE_IN_SECONDS, 'all' ) ) {
+		if ( ! Nano_Unlock_Limit::allow( 'checkout', 20, 10 * MINUTE_IN_SECONDS, $visitor ) || ! Nano_Unlock_Limit::allow( 'checkout', 600, 10 * MINUTE_IN_SECONDS, 'all' ) ) {
 			return self::error( 429, __( 'That is a lot of checkouts at once. Please wait a few minutes.', 'nano-unlock' ) );
 		}
 		$settings = Nano_Unlock_Settings::get();
@@ -98,6 +103,10 @@ final class Nano_Unlock_Rest {
 					? __( 'This site uses a test node, so it cannot see real payments. Nothing was charged: do not pay.', 'nano-unlock' )
 					: __( 'This site is not set up to sell yet.', 'nano-unlock' )
 			);
+		}
+		if ( ! Nano_Unlock::db_ready() ) {
+			// The table update failed (the dashboard says why): a checkout could not be stored.
+			return self::error( 503, __( 'This site is not ready to sell right now. Try again later.', 'nano-unlock' ) );
 		}
 		$offer = Nano_Unlock::tokens()->verify( 'offer', $request->get_param( 'offer' ) );
 		if ( ! $offer || ! isset( $offer['p'], $offer['s'], $offer['u'], $offer['m'] ) ) {
@@ -123,13 +132,17 @@ final class Nano_Unlock_Rest {
 			// Without the starter cookie this browser could pay but never claim its receipt.
 			return self::error( 503, __( 'This browser did not accept the checkout cookie. Allow cookies for this site, then try again.', 'nano-unlock' ) );
 		}
-		// Each open checkout holds its amount for over an hour: one visitor alone must never hold them all.
-		$visitor = Nano_Unlock_Limit::visitor( $ip );
-		if ( Nano_Unlock_Store::held_by( $visitor, Nano_Unlock::LATE_SECONDS ) >= Nano_Unlock_Store::MAX_HELD ) {
-			return self::error( 429, __( 'Too many checkouts are open from your connection. Cancel one, or wait a few minutes.', 'nano-unlock' ) );
+		// Each open checkout holds its amount for over an hour: one visitor alone must never hold them all. The
+		// count and the new checkout happen under one lock per visitor, so parallel requests can't pass it together.
+		$locked = Nano_Unlock_Store::lock( $visitor );
+		if ( false === $locked ) {
+			return self::error( 503, __( 'The network check is busy, try again in a moment.', 'nano-unlock' ) );
 		}
 		$now = time();
 		try {
+			if ( Nano_Unlock_Store::held_by( $visitor, Nano_Unlock::LATE_SECONDS ) >= Nano_Unlock_Store::MAX_HELD ) {
+				return self::error( 429, __( 'Too many checkouts are open from your connection. Cancel one, or wait a few minutes.', 'nano-unlock' ) );
+			}
 			$row = Nano_Unlock_Store::create(
 				array(
 					'item'       => Nano_Unlock_Render::item( $post->ID, (string) $offer['s'] ),
@@ -145,14 +158,18 @@ final class Nano_Unlock_Rest {
 				Nano_Unlock::LATE_SECONDS
 			);
 		} catch ( Nano_Unlock_Busy $e ) {
-			return self::error( 503, __( 'Busy right now: many readers are paying at this price. Try again in a moment.', 'nano-unlock' ) );
+			return self::error( 503, __( 'Busy right now: other open checkouts hold every amount for this price. Try again in a few minutes.', 'nano-unlock' ) );
+		} finally {
+			if ( $locked ) {
+				Nano_Unlock_Store::unlock( $visitor );
+			}
 		}
 		$shown = Nano_Unlock_Settings::price( $usd );
 		return self::ok(
 			array(
 				'id'        => $row['id'],
 				'amount'    => $row['amount'],
-				// Every digit of the amount: at most four decimals (an older checkout's amount keeps its whole tail).
+				// Every digit of the amount: at most four decimals (an amount from before 0.2.0 keeps all of its digits).
 				'xno'       => Nano_Unlock_Amount::to_xno( $row['amount'] ),
 				'usd'       => null === $shown ? $usd : $shown,
 				'rate'      => $rate,
@@ -173,7 +190,7 @@ final class Nano_Unlock_Rest {
 	 */
 	public static function claim( WP_REST_Request $request ) {
 		// About one poll every 2 s per open checkout; this leaves room for a few readers behind one address.
-		if ( ! Nano_Unlock_Limit::allow( 'claim', 180, MINUTE_IN_SECONDS, Nano_Unlock_Limit::client_ip() ) ) {
+		if ( ! Nano_Unlock_Limit::allow( 'claim', 180, MINUTE_IN_SECONDS, Nano_Unlock_Limit::visitor() ) ) {
 			return self::error( 429, __( 'That is a lot of payment checks at once. Please wait a moment.', 'nano-unlock' ) );
 		}
 		$id  = (string) $request->get_param( 'id' );
@@ -233,7 +250,7 @@ final class Nano_Unlock_Rest {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public static function cancel( WP_REST_Request $request ) {
-		if ( ! Nano_Unlock_Limit::allow( 'claim', 180, MINUTE_IN_SECONDS, Nano_Unlock_Limit::client_ip() ) ) {
+		if ( ! Nano_Unlock_Limit::allow( 'claim', 180, MINUTE_IN_SECONDS, Nano_Unlock_Limit::visitor() ) ) {
 			return self::error( 429, __( 'That is a lot of payment checks at once. Please wait a moment.', 'nano-unlock' ) );
 		}
 		$id  = (string) $request->get_param( 'id' );

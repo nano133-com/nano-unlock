@@ -300,6 +300,25 @@ function update_option( $name, $value, $autoload = null ) {
 	$GLOBALS['nano_unlock_wp']['options'][ $name ] = $value;
 	return true;
 }
+function delete_option( $name ) {
+	unset( $GLOBALS['nano_unlock_wp']['options'][ $name ] );
+	return true;
+}
+function wp_next_scheduled( $hook ) {
+	return isset( $GLOBALS['nano_unlock_wp']['cron'][ $hook ] ) ? $GLOBALS['nano_unlock_wp']['cron'][ $hook ] : false;
+}
+function wp_schedule_event( $timestamp, $recurrence, $hook ) {
+	$GLOBALS['nano_unlock_wp']['cron'][ $hook ] = $timestamp;
+	return true;
+}
+/**
+ * WordPress's table updater: here it changes nothing, so a test can show what install() does when the
+ * update did not take (and make the table itself when it should).
+ */
+function dbDelta( $sql ) {
+	$GLOBALS['nano_unlock_wp']['dbdelta'][] = $sql;
+	return array();
+}
 function get_transient( $name ) {
 	return isset( $GLOBALS['nano_unlock_wp']['transients'][ $name ] ) ? $GLOBALS['nano_unlock_wp']['transients'][ $name ] : false;
 }
