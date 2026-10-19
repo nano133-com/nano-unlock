@@ -17,7 +17,7 @@ define( 'DAY_IN_SECONDS', 86400 );
 define( 'COOKIEPATH', '/' );
 define( 'COOKIE_DOMAIN', '' );
 define( 'ARRAY_A', 'ARRAY_A' );
-define( 'NANO_UNLOCK_VERSION', '0.1.2' );
+define( 'NANO_UNLOCK_VERSION', '0.2.0' );
 define( 'NANO_UNLOCK_DIR', dirname( __DIR__ ) . '/nano-unlock/' );
 define( 'NANO_UNLOCK_URL', 'https://example.test/wp-content/plugins/nano-unlock/' );
 define( 'NANO_UNLOCK_FILE', NANO_UNLOCK_DIR . 'nano-unlock.php' );
@@ -158,6 +158,7 @@ class Nano_Unlock_Test_Wpdb {
 				starter TEXT NOT NULL,
 				visitor TEXT NULL,
 				status TEXT NOT NULL DEFAULT \'waiting\',
+				cancelled_at INTEGER NULL,
 				created_at INTEGER NOT NULL,
 				expires_at INTEGER NOT NULL,
 				hash TEXT NULL UNIQUE,

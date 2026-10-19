@@ -314,10 +314,12 @@ final class Nano_Unlock_Render {
 				'late'  => Nano_Unlock::LATE_SECONDS,
 				'text'  => array(
 					'starting' => __( 'Starting…', 'nano-unlock' ),
-					/* translators: 1: the price in dollars ("$0.05"), 2: the amount in XNO ("Ӿ0.1512"). */
+					/* translators: 1: the price in dollars ("$0.05"), 2: the amount ("0.1512 XNO"). */
 					'pay'      => __( 'Pay %1$s · %2$s', 'nano-unlock' ),
-					/* translators: 1: the price in dollars ("$0.05"), 2: the amount in XNO, digits only ("0.1512"). For screen readers. */
-					'paySr'    => __( 'Pay %1$s: %2$s XNO', 'nano-unlock' ),
+					/* translators: 1: the price in dollars ("$0.05"), 2: the amount ("0.1512 XNO"). For screen readers. */
+					'paySr'    => __( 'Pay %1$s: %2$s', 'nano-unlock' ),
+					/* translators: %s: an amount of Nano, digits only ("0.1512"). */
+					'xno'      => __( '%s XNO', 'nano-unlock' ),
 					'open'     => __( 'Open in wallet', 'nano-unlock' ),
 					'details'  => __( 'Details', 'nano-unlock' ),
 					'address'  => __( 'Address', 'nano-unlock' ),

@@ -350,7 +350,12 @@ final class Nano_Unlock_Settings {
 							<td><?php echo esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $sale['paid_at'] ) ); ?></td>
 							<td><a href="<?php echo esc_url( get_permalink( (int) $sale['post_id'] ) ); ?>"><?php echo esc_html( get_the_title( (int) $sale['post_id'] ) ); ?></a></td>
 							<td>$<?php echo esc_html( (string) ( null === self::price( $sale['usd'] ) ? $sale['usd'] : self::price( $sale['usd'] ) ) ); ?></td>
-							<td>Ӿ<?php echo esc_html( Nano_Unlock_Amount::to_xno_short( substr( (string) $sale['amount'], 0, -6 ) . '000000', 6 ) ); ?></td>
+							<td>
+							<?php
+							/* translators: %s: an amount of Nano, digits only ("0.1512"). */
+							echo esc_html( sprintf( __( '%s XNO', 'nano-unlock' ), Nano_Unlock_Amount::to_xno_short( substr( (string) $sale['amount'], 0, -6 ) . '000000', 6 ) ) );
+							?>
+							</td>
 							<td><code><?php echo esc_html( Nano_Unlock_Address::short( (string) $sale['payer'] ) ); ?></code></td>
 							<td><a href="<?php echo esc_url( 'https://nanexplorer.com/nano/block/' . $sale['hash'] ); ?>" target="_blank" rel="noopener noreferrer"><code><?php echo esc_html( substr( (string) $sale['hash'], 0, 10 ) ); ?>…</code></a></td>
 						</tr>

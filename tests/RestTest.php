@@ -130,7 +130,7 @@ final class RestTest extends TestCase {
 
 	public function test_the_checkout_asks_for_a_short_exact_amount() {
 		$c = $this->checkout();
-		// $0.01 at $0.50 per XNO: exactly Ӿ0.02, with no tail.
+		// $0.01 at $0.50 per XNO: exactly 0.02 XNO.
 		$this->assertSame( '2' . str_repeat( '0', 28 ), $c['amount'] );
 		$this->assertSame( '0.02', $c['xno'] );
 		$this->assertSame( '0.01', $c['usd'] );
@@ -141,7 +141,7 @@ final class RestTest extends TestCase {
 
 		// The reader's script shows that amount on the card's one line, and copies it from Details.
 		$js = file_get_contents( dirname( __DIR__ ) . '/nano-unlock/assets/checkout.js' );
-		$this->assertStringContainsString( "var xno = 'Ӿ' + c.xno;", $js );
+		$this->assertStringContainsString( "var xno = t.xno.replace( '%s', c.xno );", $js );
 		$this->assertStringContainsString( 'fill( t.pay, price, xno )', $js );
 		$this->assertStringContainsString( 'copyButton( c.xno, t.amount, test )', $js );
 	}
@@ -181,8 +181,10 @@ final class RestTest extends TestCase {
 		$this->assertSame( array( 'cancelled' => true ), $res->get_data() );
 		$row = $GLOBALS['wpdb']->rows[ $c['id'] ];
 		$this->assertSame( 'cancelled', $row['status'] );
-		$this->assertNull( $row['amount_lock'] );
-		$this->assertSame( $c['amount'], $this->checkout()['amount'], 'the next reader gets the amount at once' );
+		$this->assertSame( $c['amount'], $row['amount_lock'], 'held 3 minutes more' );
+		$this->assertSame( '0.0201', $this->checkout()['xno'], 'meanwhile the next reader gets one step more' );
+		$GLOBALS['wpdb']->set( $c['id'], array( 'cancelled_at' => time() - Nano_Unlock_Store::CANCEL_HOLD - 1 ) );
+		$this->assertSame( $c['amount'], $this->checkout()['amount'], 'after 3 minutes the next reader gets it' );
 		// A payment for the cancelled checkout no longer counts for it.
 		$this->pay( $c['amount'] );
 		$this->assertSame(
@@ -260,8 +262,10 @@ final class RestTest extends TestCase {
 	}
 
 	public function test_all_steps_held_answers_busy_in_plain_words() {
+		// $0.01 at $0.50 is 0.02 XNO: a tenth is 20 steps, so 21 amounts.
 		$price = Nano_Unlock_Amount::from_usd( 0.01, 0.5 );
-		for ( $i = 0; $i < Nano_Unlock_Store::MAX_STEPS; $i++ ) {
+		$this->assertSame( 21, Nano_Unlock_Store::steps( $price ) );
+		for ( $i = 0; $i < 21; $i++ ) {
 			Nano_Unlock_Store::create(
 				array(
 					'item'       => 'post:42:0',

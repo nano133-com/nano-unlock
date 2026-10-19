@@ -137,10 +137,10 @@ await page.locator(".nano-unlock__card").waitFor();
 const m = /^nano:(nano_[a-z0-9]+)\?amount=(\d+)$/.exec(resA.uri ?? "");
 check(!!m && m[1] === SITE_ADDR && m[2] === resA.amount, `the checkout asks for a payment to the site's address (${resA.uri?.slice(0, 40)}…)`);
 const amountA = resA.amount ?? "";
-check(amountA === "2" + "0".repeat(28) && resA.xno === "0.02", `$0.01 at $0.50/XNO is exactly Ӿ0.02, with no tail (${resA.xno})`);
+check(amountA === "2" + "0".repeat(28) && resA.xno === "0.02", `$0.01 at $0.50/XNO is exactly 0.02 XNO (${resA.xno})`);
 const line = (await box.locator(".nano-unlock__line [aria-hidden='true']").innerText()).trim();
 const lineSr = (await box.locator(".nano-unlock__line .nano-unlock__sr").textContent()).trim();
-check(line === "Pay $0.01 · Ӿ0.02" && lineSr === "Pay $0.01: 0.02 XNO", `the card's one line: "${line}" (read out as "${lineSr}")`);
+check(line === "Pay $0.01 · 0.02 XNO" && lineSr === "Pay $0.01: 0.02 XNO" && !line.includes("Ӿ"), `the card's one line: "${line}" (read out as "${lineSr}")`);
 // Test mode: stamped "do not pay", the QR code holds no payment, and the wallet and copy keys are off.
 check((await box.locator(".nano-unlock__card--test .nano-unlock__stamp").textContent())?.includes("do not pay"), "test mode: the QR code is stamped \"do not pay\"");
 check((await box.locator("a.nano-unlock__open, a.nano-unlock__qr, a[href^='nano:']").count()) === 0 && (await box.locator("button.nano-unlock__open[disabled]").count()) === 1, "test mode: no nano: link anywhere, and \"Open in wallet\" is off");
@@ -154,7 +154,7 @@ check(!(await box.locator(".nano-unlock__card").innerText()).includes(SITE_ADDR)
 await more.focus();
 await page.keyboard.press("Enter");
 const details = (await box.locator(".nano-unlock__details").innerText()).replace(/\s+/g, " ");
-check((await more.getAttribute("aria-expanded")) === "true" && details.includes(SITE_ADDR) && details.includes("Ӿ0.02") && /Expires in \d+:\d\d/.test(details), "Enter opens Details: the address, the amount, the expiry");
+check((await more.getAttribute("aria-expanded")) === "true" && details.includes(SITE_ADDR) && details.includes("0.02 XNO") && /Expires in \d+:\d\d/.test(details), "Enter opens Details: the address, the amount, the expiry");
 await page.keyboard.press("Enter");
 check((await more.getAttribute("aria-expanded")) === "false", "Enter closes it again");
 await page.waitForTimeout(600);
@@ -216,10 +216,13 @@ const cancelled = cp.waitForResponse((r) => r.url().includes("nano-unlock/v1/can
 await cp.locator(".nano-unlock__cancel").click();
 await cancelled;
 await cp.locator(".nano-unlock__button").waitFor();
-const cRow = wp("db", "query", `SELECT status, IFNULL(amount_lock, 'free') FROM wp_nano_unlock_checkouts WHERE id='${cId}'`, "--skip-column-names");
+const cRow = wp("db", "query", `SELECT status, IFNULL(amount_lock, 'free'), IFNULL(visitor, 'none') FROM wp_nano_unlock_checkouts WHERE id='${cId}'`, "--skip-column-names");
 check(!(await cp.locator(".nano-unlock__card").count()) && (await cp.evaluate(() => document.activeElement?.classList.contains("nano-unlock__button"))), "Cancel closes the card, and the focus goes back to the Unlock key");
-check(/^cancelled\s+free$/.test(cRow), `the cancelled checkout's amount is free at once (${cRow.replace(/\s+/, " ")})`);
+check(/^cancelled\s+1\d+\s+none$/.test(cRow), `the cancelled checkout's amount stays held for 3 minutes, no longer counted for the visitor (${cRow.replace(/\s+/g, " ")})`);
 await cx.close();
+// Three minutes pass (the cancel time is moved back): the next checkout frees the amount (section 4 gets exactly 0.1 XNO).
+const passCancelHold = () => wp("db", "query", "UPDATE wp_nano_unlock_checkouts SET cancelled_at = cancelled_at - 181 WHERE status = 'cancelled'");
+passCancelHold();
 
 // ---- 4. The owner's wallet already received it (history path), on the block post -----------------------
 console.log("\n— the wallet received the payment before the check (history)");
@@ -228,7 +231,7 @@ const checkoutB = page.waitForResponse((r) => r.url().includes("nano-unlock/v1/c
 await page.locator(".nano-unlock__button").click();
 const amountB = (await (await checkoutB).json()).amount ?? "";
 await page.locator(".nano-unlock__card").waitFor();
-check(amountB === "1" + "0".repeat(29), `$0.05 at $0.50/XNO is exactly Ӿ0.1 (${amountB})`);
+check(amountB === "1" + "0".repeat(29), `$0.05 at $0.50/XNO is exactly 0.1 XNO (${amountB})`);
 const payB = await mock("/__pay", { to: SITE_ADDR, amount: amountB, from: BUYER2 });
 await mock("/__receive", { hash: payB.hash });
 await page.waitForURL(/nano_unlocked=/, { timeout: 10000 });
@@ -260,7 +263,7 @@ check(c1.status === 200 && c1.data.amount === amountA, `a paid amount is free ag
 const c1claim = await api("claim", { id: c1.data.id }, { cookie: starterCookie });
 check(c1claim.status === 200 && c1claim.data.paid === false, "the payment that paid the last checkout of that amount does not pay this one");
 const c2 = await api("checkout", { offer }, { cookie: starterCookie });
-check(c2.status === 200 && c2.data.amount === STEP(amountA, 1) && c2.data.xno === "0.0201", `while c1 holds Ӿ0.02, the next checkout gets one step more (${c2.data.xno})`);
+check(c2.status === 200 && c2.data.amount === STEP(amountA, 1) && c2.data.xno === "0.0201", `while c1 holds 0.02 XNO, the next checkout gets one step more (${c2.data.xno})`);
 
 // One payment unlocks one checkout, once: a second checkout that asks for the SAME amount (forced here,
 // the plugin never gives two open checkouts one amount) never sees a used payment.
@@ -279,8 +282,12 @@ const cancel1 = await api("cancel", { id: c1.data.id }, { cookie: starterCookie 
 check(cancel1.status === 200 && cancel1.data.cancelled === true, "the starting browser cancels it");
 const gone = await api("claim", { id: c1.data.id }, { cookie: starterCookie });
 check(gone.status === 200 && gone.data.gone === true, "a cancelled checkout can't be paid any more");
+const c3held = await api("checkout", { offer }, { cookie: starterCookie });
+check(c3held.status === 200 && c3held.data.xno === "0.0202", `for 3 minutes the cancelled 0.02 XNO stays held: the next checkout gets one step above the open one (${c3held.data.xno})`);
+await api("cancel", { id: c3held.data.id }, { cookie: starterCookie });
+passCancelHold();
 const c3 = await api("checkout", { offer }, { cookie: starterCookie });
-check(c3.status === 200 && c3.data.amount === amountA, "the cancelled amount goes to the next checkout at once (the lowest free step)");
+check(c3.status === 200 && c3.data.amount === amountA, "after the 3 minutes the cancelled amount goes to the next checkout (the lowest free step)");
 // Cancel after the payment arrived: it unlocks instead.
 await mock("/__pay", { to: SITE_ADDR, amount: c3.data.amount, from: BUYER2 });
 const cancel3 = await api("cancel", { id: c3.data.id }, { cookie: starterCookie });
@@ -325,12 +332,14 @@ while (!capped && attempts < 15) {
 }
 check(held.length === 10 && capped?.status === 429 && /Too many checkouts are open/.test(capped.data.message), `one visitor holds at most 10 amounts at once (the #${attempts} is refused: ${capped?.data.message})`);
 for (const id of held) await api("cancel", { id }, { cookie: starterCookie });
+passCancelHold();
 let firstRefused = 0;
 while (!firstRefused && attempts < 25) {
   attempts++;
   const r = await api("checkout", { offer }, { cookie: starterCookie });
   if (r.status === 429) firstRefused = attempts;
-  else await api("cancel", { id: r.data.id }, { cookie: starterCookie });
+  else if (r.status === 200) await api("cancel", { id: r.data.id }, { cookie: starterCookie });
+  else break;
 }
 check(firstRefused === 21, `checkouts from one address are refused from #${firstRefused} (limit 20 per 10 minutes)`);
 wp("transient", "delete", "--all");
@@ -338,7 +347,8 @@ wp("transient", "delete", "--all");
 // ---- 5b. Many readers at the same instant (MySQL, parallel requests) ---------------------------------
 console.log("\n— many readers at once");
 // Each request is its own visitor (the e2e helper takes the address from a test header). Post B costs
-// $0.05: Ӿ0.1. Its paid checkout freed Ӿ0.1, so the 60 readers must hold exactly Ӿ0.1000 to Ӿ0.1059.
+// $0.05: 0.1 XNO (a tenth is 100 steps, so the limit of 100 amounts applies). Its paid checkout freed
+// 0.1 XNO, so the 60 readers must hold exactly 0.1000 to 0.1059 XNO.
 wp("db", "query", "DELETE FROM wp_nano_unlock_checkouts WHERE status <> 'paid'");
 const offerB = /data-nano-unlock-offer="([^"]+)"/.exec(await (await fetch(urlB)).text())?.[1];
 const burst = async (from, n) => Promise.all(Array.from({ length: n }, (_, i) => api("checkout", { offer: offerB }, { ip: `10.77.${Math.floor((from + i) / 250)}.${((from + i) % 250) + 1}` })));
@@ -346,14 +356,14 @@ const first = await burst(0, 60);
 const got = first.filter((r) => r.status === 200).map((r) => r.data.amount);
 const want = Array.from({ length: 60 }, (_, k) => STEP(amountB, k));
 check(got.length === 60 && new Set(got).size === 60, `60 parallel checkouts: 60 answered, 60 different amounts (${got.length} answered, ${new Set(got).size} different)`);
-check([...got].sort().join() === [...want].sort().join(), "together they hold Ӿ0.1000 … Ӿ0.1059, with no gap and no tail");
+check([...got].sort().join() === [...want].sort().join(), "together they hold 0.1000 … 0.1059 XNO, with no gap");
 const second = await burst(60, 50);
 const got2 = second.filter((r) => r.status === 200).map((r) => r.data.amount);
 const busy = second.filter((r) => r.status === 503);
 check(got2.length === 40 && busy.length === 10 && new Set([...got, ...got2]).size === 100, `50 more at once: 40 get the last steps, 10 are told "busy" (${got2.length} + ${busy.length})`);
 check(busy.every((r) => /Try again in a moment/.test(r.data.message)), `the busy answer: "${busy[0]?.data.message}"`);
 const locks = wp("db", "query", "SELECT COUNT(DISTINCT amount_lock), COUNT(*), MAX(CAST(amount_lock AS DECIMAL(40,0))) FROM wp_nano_unlock_checkouts WHERE amount_lock IS NOT NULL", "--skip-column-names").split(/\s+/);
-check(locks[0] === "100" && locks[1] === "100" && locks[2] === STEP(amountB, 99), `the table holds 100 different amounts, the highest Ӿ0.1099 (${locks.join(" ")})`);
+check(locks[0] === "100" && locks[1] === "100" && locks[2] === STEP(amountB, 99), `the table holds 100 different amounts, the highest 0.1099 XNO (${locks.join(" ")})`);
 wp("db", "query", "DELETE FROM wp_nano_unlock_checkouts WHERE status <> 'paid'");
 wp("transient", "delete", "--all");
 

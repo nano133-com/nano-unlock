@@ -115,7 +115,7 @@ try {
   await page.evaluate(() => window.scrollBy(0, -260));
   await page.screenshot({ path: join(OUT, "screenshot-1.png") });
 
-  // 2. The checkout: the QR code, "Pay $0.05 · Ӿ0.05", Open in wallet, the status line.
+  // 2. The checkout: the QR code, "Pay $0.05 · 0.05 XNO", Open in wallet, the status line.
   await box.locator(".nano-unlock__button").click();
   await page.locator(".nano-unlock__card").waitFor();
   const uri = await page.locator("a.nano-unlock__open").getAttribute("href");

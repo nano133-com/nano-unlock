@@ -21,8 +21,8 @@ defined( 'ABSPATH' ) || exit;
  *   be matched: from the start, through the checkout's 15 minutes and the hour
  *   for late payments, plus HOLD_AFTER. No two checkouts ever hold the same
  *   amount at once, so a payment can match only one of them. The amount is
- *   freed (NULL: NULL values don't collide) at once when the checkout is paid
- *   or cancelled, or when that time is over.
+ *   freed (NULL: NULL values don't collide) at once when the checkout is paid,
+ *   CANCEL_HOLD after it is cancelled, or when that time is over.
  * - `hash` is the payment's block hash, so one payment unlocks one checkout,
  *   once. A paid row is the record of the sale and is kept.
  */
@@ -31,10 +31,24 @@ final class Nano_Unlock_Store {
 	const DB_VERSION = '2';
 
 	/**
-	 * The most steps of 0.0001 XNO a checkout may add to its price to find a free amount
-	 * (at most Ӿ0.0099 more). When all of them are held, the reader is asked to try again.
+	 * The most amounts one price can have open at once: the price and up to 99 steps of
+	 * 0.0001 XNO above it (at most 0.0099 XNO more). See steps().
 	 */
 	const MAX_STEPS = 100;
+
+	/**
+	 * The steps above a price never add more than this share of it, in percent: a 1¢ price
+	 * (about 0.0303 XNO) gets at most 30 steps more. When all are held, the reader is asked
+	 * to try again in a moment.
+	 */
+	const MAX_EXTRA_PERCENT = 10;
+
+	/**
+	 * Seconds a cancelled checkout's amount stays held. A payment the node first sees within a
+	 * minute after Cancel can then never count for the next checkout that gets the amount
+	 * (that one only counts payments from CLOCK_SLACK before its own start).
+	 */
+	const CANCEL_HOLD = 180;
 
 	/**
 	 * Seconds an unpaid amount stays held after its late window: more than the clock allowance
@@ -79,6 +93,7 @@ final class Nano_Unlock_Store {
   starter char(64) NOT NULL,
   visitor char(16) NULL,
   status varchar(10) NOT NULL DEFAULT 'waiting',
+  cancelled_at bigint(20) NULL,
   created_at bigint(20) NOT NULL,
   expires_at bigint(20) NOT NULL,
   hash char(64) NULL,
@@ -95,6 +110,18 @@ final class Nano_Unlock_Store {
 	}
 
 	/**
+	 * How many amounts a price may use: the price itself and the steps above it, at most
+	 * MAX_EXTRA_PERCENT of the price and at most MAX_STEPS amounts in all.
+	 *
+	 * @param string $price The price in raw, a clean amount.
+	 * @return int At least 1.
+	 */
+	public static function steps( $price ) {
+		$base = (int) substr( $price, 0, -Nano_Unlock_Amount::STEP_DIGITS );
+		return max( 1, min( self::MAX_STEPS, intdiv( $base * self::MAX_EXTRA_PERCENT, 100 ) + 1 ) );
+	}
+
+	/**
 	 * Creates a checkout with the smallest free amount at or above its price.
 	 *
 	 * The amounts already held in the price's range are read first; then the free
@@ -106,7 +133,7 @@ final class Nano_Unlock_Store {
 	 * @param string $price The price in raw, a clean amount from Nano_Unlock_Amount::from_usd().
 	 * @param int    $late  Seconds after expiry that a payment still counts.
 	 * @return array The row.
-	 * @throws Nano_Unlock_Busy When every amount within MAX_STEPS is held, or the database refuses the row.
+	 * @throws Nano_Unlock_Busy When every amount within steps() is held, or the database refuses the row.
 	 */
 	public static function create( array $row, $price, $late ) {
 		global $wpdb;
@@ -114,7 +141,7 @@ final class Nano_Unlock_Store {
 		self::release_old( $late );
 
 		$amounts = array();
-		for ( $k = 0; $k < self::MAX_STEPS; $k++ ) {
+		for ( $k = 0, $n = self::steps( $price ); $k < $n; $k++ ) {
 			$amounts[] = Nano_Unlock_Amount::plus_steps( $price, $k );
 		}
 		$in   = implode( ', ', array_fill( 0, count( $amounts ), '%s' ) );
@@ -152,13 +179,15 @@ final class Nano_Unlock_Store {
 	}
 
 	/**
-	 * Frees the amounts of checkouts that can no longer be paid (their late window and HOLD_AFTER are over).
+	 * Frees the amounts of checkouts that can no longer be paid (their late window and HOLD_AFTER
+	 * are over), and of checkouts cancelled more than CANCEL_HOLD ago.
 	 *
 	 * @param int $late Seconds after expiry that a payment still counts.
 	 */
 	public static function release_old( $late ) {
 		global $wpdb;
-		$wpdb->query( $wpdb->prepare( 'UPDATE %i SET amount_lock = NULL, visitor = NULL WHERE amount_lock IS NOT NULL AND expires_at < %d', self::table(), time() - $late - self::HOLD_AFTER ) );
+		$now = time();
+		$wpdb->query( $wpdb->prepare( "UPDATE %i SET amount_lock = NULL, visitor = NULL WHERE amount_lock IS NOT NULL AND ( expires_at < %d OR ( status = 'cancelled' AND cancelled_at < %d ) )", self::table(), $now - $late - self::HOLD_AFTER, $now - self::CANCEL_HOLD ) );
 	}
 
 	/**
@@ -211,15 +240,15 @@ final class Nano_Unlock_Store {
 	}
 
 	/**
-	 * Ends a waiting checkout and frees its amount at once. A payment that comes after
-	 * this no longer counts for it.
+	 * Ends a waiting checkout. A payment that comes after this no longer counts for it. Its
+	 * amount stays held for CANCEL_HOLD more (no longer counted for the visitor), then it is free.
 	 *
 	 * @param string $id The checkout.
 	 * @return bool Whether it was cancelled (false: it was not waiting any more).
 	 */
 	public static function cancel( $id ) {
 		global $wpdb;
-		$n = $wpdb->query( $wpdb->prepare( "UPDATE %i SET status = 'cancelled', amount_lock = NULL, visitor = NULL WHERE id = %s AND status = 'waiting'", self::table(), $id ) );
+		$n = $wpdb->query( $wpdb->prepare( "UPDATE %i SET status = 'cancelled', cancelled_at = %d, visitor = NULL WHERE id = %s AND status = 'waiting'", self::table(), time(), $id ) );
 		return 1 === $n;
 	}
 

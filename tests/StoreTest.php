@@ -17,7 +17,7 @@ final class StoreTest extends TestCase {
 	const LATE = 3600;
 
 	/**
-	 * $0.05 at $0.3307 per XNO: Ӿ0.1512.
+	 * $0.05 at $0.3307 per XNO: 0.1512 XNO.
 	 *
 	 * @var string
 	 */
@@ -75,15 +75,28 @@ final class StoreTest extends TestCase {
 		$this->assertSame( array( '0.1512', '0.1513', '0.1514', '0.1515', '0.1516' ), $got );
 	}
 
-	public function test_a_freed_step_is_given_again_lowest_first() {
+	public function test_a_cancelled_amount_is_held_three_minutes_then_given_again_lowest_first() {
 		$this->create();
 		$b = $this->create();
 		$this->create();
 		$this->assertTrue( Nano_Unlock_Store::cancel( $b['id'] ) );
-		$this->assertNull( $this->row( $b['id'] )['amount_lock'], 'a cancel frees the amount at once' );
-		$this->assertSame( 'cancelled', $this->row( $b['id'] )['status'] );
-		$this->assertSame( $this->step( 1 ), $this->create()['amount'], 'the next reader gets the freed step' );
-		$this->assertSame( $this->step( 3 ), $this->create()['amount'] );
+		$cancelled = $this->row( $b['id'] );
+		$this->assertSame( 'cancelled', $cancelled['status'] );
+		$this->assertSame( $b['amount'], $cancelled['amount_lock'], 'a cancelled amount stays held' );
+		$this->assertNull( $cancelled['visitor'], 'but no longer counts for the visitor' );
+		$this->assertSame( $this->step( 3 ), $this->create()['amount'], 'during the hold the next reader gets the next free step' );
+		$GLOBALS['wpdb']->set( $b['id'], array( 'cancelled_at' => time() - Nano_Unlock_Store::CANCEL_HOLD + 5 ) );
+		$this->assertSame( $this->step( 4 ), $this->create()['amount'], 'still held just before the 3 minutes are over' );
+		$GLOBALS['wpdb']->set( $b['id'], array( 'cancelled_at' => time() - Nano_Unlock_Store::CANCEL_HOLD - 1 ) );
+		$this->assertSame( $this->step( 1 ), $this->create()['amount'], 'after 3 minutes the next reader gets the freed step' );
+		$this->assertNull( $this->row( $b['id'] )['amount_lock'] );
+	}
+
+	public function test_the_cancel_hold_is_longer_than_the_clock_allowance() {
+		// A payment the node first saw before Cancel (or within a minute after it) must count as "before"
+		// the next checkout that gets the amount.
+		$this->assertSame( 180, Nano_Unlock_Store::CANCEL_HOLD );
+		$this->assertGreaterThan( Nano_Unlock_Verifier::CLOCK_SLACK, Nano_Unlock_Store::CANCEL_HOLD );
 	}
 
 	public function test_a_payment_frees_the_amount_at_once() {
@@ -115,11 +128,13 @@ final class StoreTest extends TestCase {
 	}
 
 	public function test_the_upper_limit_answers_busy() {
+		// 0.1512 XNO: a tenth is 151 steps, so the limit of 100 amounts applies.
+		$this->assertSame( Nano_Unlock_Store::MAX_STEPS, Nano_Unlock_Store::steps( $this->price ) );
 		for ( $i = 0; $i < Nano_Unlock_Store::MAX_STEPS; $i++ ) {
 			$last = $this->create( sprintf( '%016x', $i ) );
 		}
 		$this->assertSame( $this->step( Nano_Unlock_Store::MAX_STEPS - 1 ), $last['amount'] );
-		$this->assertSame( '0.1611', Nano_Unlock_Amount::to_xno( $last['amount'] ), 'at most Ӿ0.0099 above the price' );
+		$this->assertSame( '0.1611', Nano_Unlock_Amount::to_xno( $last['amount'] ), 'at most 0.0099 XNO above the price' );
 		try {
 			$this->create();
 			$this->fail( 'a checkout beyond MAX_STEPS must be refused' );
@@ -127,10 +142,32 @@ final class StoreTest extends TestCase {
 			$this->assertSame( 'no free amount', $e->getMessage() );
 		}
 		$this->assertCount( Nano_Unlock_Store::MAX_STEPS, $GLOBALS['wpdb']->rows, 'nothing was held for the refused reader' );
-		// One step comes free: the next reader gets it.
+		// One step comes free (cancelled, and its 3 minutes are over): the next reader gets it.
 		$third = array_values( $GLOBALS['wpdb']->rows )[2];
 		Nano_Unlock_Store::cancel( $third['id'] );
+		$GLOBALS['wpdb']->set( $third['id'], array( 'cancelled_at' => time() - Nano_Unlock_Store::CANCEL_HOLD - 1 ) );
 		$this->assertSame( $third['amount'], $this->create()['amount'] );
+	}
+
+	public function test_the_steps_never_add_more_than_a_tenth_of_the_price() {
+		// 1¢ at $0.33 per XNO is 0.0304 XNO (304 steps): at most 30 steps more, 0.0334 XNO (+9.9%).
+		$this->price = Nano_Unlock_Amount::from_usd( 0.01, 0.33 );
+		$this->assertSame( '0.0304', Nano_Unlock_Amount::to_xno( $this->price ) );
+		$this->assertSame( 31, Nano_Unlock_Store::steps( $this->price ) );
+		for ( $i = 0; $i < 31; $i++ ) {
+			$last = $this->create( sprintf( '%016x', $i ) );
+		}
+		$this->assertSame( '0.0334', Nano_Unlock_Amount::to_xno( $last['amount'] ) );
+		try {
+			$this->create( 'ffffffffffffffff' );
+			$this->fail( 'a 32nd checkout at 1¢ must be refused' );
+		} catch ( Nano_Unlock_Busy $e ) {
+			$this->assertCount( 31, $GLOBALS['wpdb']->rows );
+		}
+		// A price under 0.001 XNO has no room above it: one open checkout at a time.
+		$this->assertSame( 1, Nano_Unlock_Store::steps( Nano_Unlock_Amount::from_steps( 9 ) ) );
+		$this->assertSame( 2, Nano_Unlock_Store::steps( Nano_Unlock_Amount::from_steps( 10 ) ) );
+		$this->assertSame( 100, Nano_Unlock_Store::steps( Nano_Unlock_Amount::from_steps( 2000000000 ) ) );
 	}
 
 	public function test_a_rival_that_takes_the_amount_after_the_read_sends_this_reader_one_step_on() {
@@ -196,7 +233,7 @@ final class StoreTest extends TestCase {
 		$c = $this->create( $v );
 		$this->create( 'dddddddddddddddd' );
 		$this->assertSame( 3, Nano_Unlock_Store::held_by( $v, self::LATE ) );
-		Nano_Unlock_Store::cancel( $a['id'] );
+		Nano_Unlock_Store::cancel( $a['id'] ); // Still held 3 minutes, but no longer the visitor's.
 		Nano_Unlock_Store::mark_paid( $b['id'], str_repeat( 'B', 64 ), self::SITE );
 		$this->assertSame( 1, Nano_Unlock_Store::held_by( $v, self::LATE ) );
 		$GLOBALS['wpdb']->set( $c['id'], array( 'expires_at' => time() - self::LATE - Nano_Unlock_Store::HOLD_AFTER - 1 ) );

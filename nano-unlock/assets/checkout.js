@@ -3,7 +3,7 @@
  *
  * A click on "Unlock" asks this site for a checkout (an amount of its own,
  * at most four decimals), shows it as a QR code, one line ("Pay $0.05 ·
- * Ӿ0.1512") and an "Open in wallet" key, and asks the site every two seconds
+ * 0.1512 XNO") and an "Open in wallet" key, and asks the site every two seconds
  * whether the payment arrived. One status line says where it is. The address,
  * the amount with Copy, the expiry and one sentence of help are under
  * "Details", closed at first. When the payment has arrived, the site sets a
@@ -245,7 +245,7 @@
 			var skew = c.skew || 0;
 			var test = !! c.test;
 			var price = dollars( c.usd );
-			var xno = 'Ӿ' + c.xno;
+			var xno = t.xno.replace( '%s', c.xno );
 			button.hidden = true;
 			box.classList.add( 'nano-unlock--open' );
 			panel.hidden = false;
@@ -271,13 +271,13 @@
 			card.appendChild( qr );
 
 			var side = node( 'div', 'nano-unlock__side' );
-			// One line: what to pay, in dollars and in XNO. Read out as "Pay $0.05: 0.1512 XNO".
+			// One line: what to pay, in dollars and in XNO ("Pay $0.05 · 0.1512 XNO"). Read out as "Pay $0.05: 0.1512 XNO".
 			var line = node( 'p', 'nano-unlock__line' );
 			line.tabIndex = -1;
 			var seen = node( 'span', '', fill( t.pay, price, xno ) );
 			seen.setAttribute( 'aria-hidden', 'true' );
 			line.appendChild( seen );
-			line.appendChild( node( 'span', 'nano-unlock__sr', fill( t.paySr, price, c.xno ) ) );
+			line.appendChild( node( 'span', 'nano-unlock__sr', fill( t.paySr, price, xno ) ) );
 			side.appendChild( line );
 
 			// The wallet key: the main key on a phone. Off in test mode.
