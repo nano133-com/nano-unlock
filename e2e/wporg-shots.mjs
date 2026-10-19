@@ -21,7 +21,9 @@ const OUT = join(ROOT, ".wordpress-org");
 const SITE = "http://localhost:8888";
 const MOCK = "http://localhost:8787";
 const PAYEE = "nano_3khpd7q3dzrbcae18bmpidbcrj5mn1n1jnkidup7acocia1b966y88czr5if";
-const READER = execFileSync("php", [join(ROOT, "e2e/address.php"), "reader"]).toString().trim();
+// The payer of the mock payment, shown in "Unlocked with Nano by …" and in "Recent sales": a real account
+// (nano133's demo payer, which paid the video take), so no picture shows a keyless address.
+const READER = "nano_1cu3hdcbkyg7wfeeawgpqziu8ryy1mdsct3ak9aazuopra9ohk44phtd3aad";
 mkdirSync(OUT, { recursive: true });
 // The helper goes into this checkout's wp-env site (as e2e/sync.sh copies the plugin), and out again at the end.
 const ENV = join(process.env.WP_ENV_HOME ?? join(homedir(), ".wp-env"));
@@ -113,10 +115,10 @@ try {
   await page.evaluate(() => window.scrollBy(0, -260));
   await page.screenshot({ path: join(OUT, "screenshot-1.png") });
 
-  // 2. The checkout: QR code, the exact amount with Copy, Open in wallet.
+  // 2. The checkout: the QR code, "Pay $0.05 · Ӿ0.05", Open in wallet, the status line.
   await box.locator(".nano-unlock__button").click();
-  await page.locator(".nano-unlock__pay").waitFor();
-  const uri = await page.locator(".nano-unlock__open").getAttribute("href");
+  await page.locator(".nano-unlock__card").waitFor();
+  const uri = await page.locator("a.nano-unlock__open").getAttribute("href");
   const m = /^nano:(nano_[a-z0-9]+)\?amount=(\d+)$/.exec(uri ?? "");
   if (await page.locator(".nano-unlock__test").count()) throw new Error("the page shows the test-mode notice");
   if (!m || m[1] !== PAYEE) throw new Error(`the checkout's payee is not the Unlock wallet: ${uri}`);
@@ -151,7 +153,7 @@ try {
   await canvas.locator(".wp-block-nano-unlock-paywall").waitFor({ timeout: 60000 });
   await ap.keyboard.press("Escape");
   const guide = ap.locator(".components-modal__screen-overlay button[aria-label='Close']");
-  if (await guide.count()) await guide.first().click();
+  if (await guide.count()) await guide.first().click({ timeout: 5000 }).catch(() => {});
   await canvas.locator(".wp-block-nano-unlock-paywall").click({ position: { x: 20, y: 12 } });
   await ap.waitForTimeout(1000);
   await ap.screenshot({ path: join(OUT, "screenshot-4.png") });

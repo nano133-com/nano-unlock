@@ -1,203 +1,475 @@
-/* Nano Unlock: the locked box and the checkout. Colours follow the theme's text; the accent is Nano teal. */
+/*
+ * Nano Unlock: the locked box and the checkout card.
+ *
+ * Text follows the theme's colours; the accent is a dark Nano teal, so white text on it
+ * passes WCAG AA (5.6:1). Selectors carry two classes (and a tag for links), because block
+ * themes colour the links in a post's content with a class and a tag (Twenty Twenty-Three:
+ * dark green), and that must never reach the keys here.
+ */
 
 .nano-unlock {
-	--nano-unlock-accent: #1f9d8a;
-	--nano-unlock-accent-dark: #147466;
-	--nano-unlock-line: rgba(127, 127, 127, 0.3);
+	--nano-unlock-accent: #147466;
+	--nano-unlock-accent-hover: #0e5a4f;
+	--nano-unlock-tint: rgba(31, 157, 138, 0.07);
+	--nano-unlock-line: rgba(127, 127, 127, 0.35);
 	margin: 1.5em 0;
 }
 
-.nano-unlock--locked,
-.nano-unlock--elsewhere {
+.nano-unlock.nano-unlock--locked,
+.nano-unlock.nano-unlock--elsewhere {
 	border: 1px solid var(--nano-unlock-line);
-	border-radius: 12px;
-	padding: 20px 22px;
-	background: linear-gradient(180deg, rgba(31, 157, 138, 0.08), rgba(31, 157, 138, 0.02));
+	border-radius: 14px;
+	padding: 18px 20px;
+	background: var(--nano-unlock-tint);
 }
 
-.nano-unlock__head {
+/* The locked box: one line and the key. */
+.nano-unlock .nano-unlock__head {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	font-size: 1.1em;
+	margin: 0 0 14px;
+	line-height: 1.4;
 }
 
-.nano-unlock__mark {
+.nano-unlock.nano-unlock--elsewhere .nano-unlock__head {
+	margin: 0;
+}
+
+.nano-unlock.nano-unlock--open .nano-unlock__head {
+	display: none;
+}
+
+.nano-unlock .nano-unlock__mark {
 	display: inline-grid;
 	place-items: center;
-	width: 32px;
-	height: 32px;
+	width: 28px;
+	height: 28px;
 	border-radius: 50%;
 	background: var(--nano-unlock-accent);
 	color: #fff;
 	font-weight: 700;
+	font-size: 16px;
+	line-height: 1;
 	flex: none;
 }
 
-.nano-unlock__text {
-	margin: 10px 0 14px;
-}
-
-.nano-unlock__info .nano-unlock__open {
-	margin-top: 6px;
-}
-
-.nano-unlock__button,
-.nano-unlock__open {
-	display: inline-block;
-	border: 0;
-	border-radius: 999px;
-	padding: 10px 22px;
-	background: var(--nano-unlock-accent);
-	color: #fff;
+/* Theme-proof buttons: no theme's button or link style reaches them. */
+.nano-unlock .nano-unlock__button,
+.nano-unlock .nano-unlock__card button,
+.nano-unlock .nano-unlock__card a.nano-unlock__open {
+	-webkit-appearance: none;
+	appearance: none;
+	box-sizing: border-box;
+	margin: 0;
 	font: inherit;
-	font-weight: 600;
-	text-decoration: none;
+	line-height: 1.2;
+	letter-spacing: normal;
+	text-transform: none;
+	text-shadow: none;
+	box-shadow: none;
 	cursor: pointer;
 }
 
-.nano-unlock__button:hover,
-.nano-unlock__open:hover,
-.nano-unlock__button:focus-visible,
-.nano-unlock__open:focus-visible {
-	background: var(--nano-unlock-accent-dark);
+/* The main keys: "Unlock for $0.05", and "Open in wallet" (the main key on a phone or a tablet). */
+.nano-unlock .nano-unlock__button,
+.nano-unlock .nano-unlock__card .nano-unlock__open,
+.nano-unlock .nano-unlock__card a.nano-unlock__open:visited {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 48px;
+	padding: 12px 24px;
+	border: 2px solid var(--nano-unlock-accent);
+	border-radius: 999px;
+	background: var(--nano-unlock-accent);
 	color: #fff;
+	font-weight: 600;
+	text-decoration: none;
 }
 
-.nano-unlock__button[disabled] {
-	opacity: 0.7;
+.nano-unlock .nano-unlock__button:hover,
+.nano-unlock .nano-unlock__button:focus-visible,
+.nano-unlock .nano-unlock__card a.nano-unlock__open:hover,
+.nano-unlock .nano-unlock__card a.nano-unlock__open:focus-visible {
+	border-color: var(--nano-unlock-accent-hover);
+	background: var(--nano-unlock-accent-hover);
+	color: #fff;
+	text-decoration: none;
+}
+
+.nano-unlock .nano-unlock__button:focus-visible,
+.nano-unlock .nano-unlock__card a.nano-unlock__open:focus-visible,
+.nano-unlock .nano-unlock__card button:focus-visible {
+	outline: 3px solid var(--nano-unlock-accent);
+	outline-offset: 3px;
+}
+
+/* A click is not a keyboard: no focus ring from a theme's ":focus" rule then (the keyboard's ring stays). */
+.nano-unlock .nano-unlock__button:focus:not(:focus-visible),
+.nano-unlock .nano-unlock__card button:focus:not(:focus-visible),
+.nano-unlock .nano-unlock__card a:focus:not(:focus-visible) {
+	outline: none;
+}
+
+.nano-unlock .nano-unlock__button[disabled] {
+	opacity: 0.75;
 	cursor: progress;
 }
 
-.nano-unlock__pay {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 20px;
-	align-items: flex-start;
+/* The checkout card: the QR code, one line, one key, one status line, then Details and Cancel. */
+.nano-unlock .nano-unlock__checkout {
+	container-type: inline-size;
 }
 
-.nano-unlock__qr img {
+.nano-unlock .nano-unlock__card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 14px;
+	text-align: center;
+}
+
+.nano-unlock .nano-unlock__qr {
+	position: relative;
 	display: block;
-	width: 200px;
-	height: 200px;
+	flex: none;
+	padding: 8px;
+	border-radius: 12px;
 	background: #fff;
-	border-radius: 8px;
+	box-shadow: 0 0 0 1px var(--nano-unlock-line);
+	line-height: 0;
+}
+
+.nano-unlock .nano-unlock__qr img {
+	display: block;
+	width: 176px;
+	height: 176px;
+	max-width: none;
+	margin: 0;
+	border-radius: 0;
 	image-rendering: pixelated;
 }
 
-.nano-unlock__info {
-	flex: 1 1 260px;
+.nano-unlock .nano-unlock__side {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
 	min-width: 0;
 }
 
-.nano-unlock__label {
+.nano-unlock .nano-unlock__line {
 	margin: 0;
-	font-size: 0.85em;
+	font-size: 1.25em;
+	font-weight: 700;
+	line-height: 1.3;
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.nano-unlock .nano-unlock__line:focus {
+	outline: none;
+}
+
+.nano-unlock .nano-unlock__card .nano-unlock__open {
+	width: 100%;
+	max-width: 320px;
+	white-space: nowrap;
+}
+
+.nano-unlock .nano-unlock__card button.nano-unlock__open[disabled] {
+	border-color: var(--nano-unlock-line);
+	background: transparent;
+	color: inherit;
+	opacity: 0.6;
+	text-decoration: line-through;
+	cursor: not-allowed;
+}
+
+/* The status line: a coloured dot and a few words in the theme's text colour. */
+.nano-unlock .nano-unlock__status {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.nano-unlock .nano-unlock__dot {
+	flex: none;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #1f9d8a;
+	box-shadow: 0 0 0 0 rgba(31, 157, 138, 0.5);
+	animation: nano-unlock-pulse 1.6s ease-out infinite;
+}
+
+.nano-unlock .nano-unlock__status[data-state="pending"] .nano-unlock__dot {
+	background: #d08700;
+	box-shadow: 0 0 0 0 rgba(208, 135, 0, 0.5);
+}
+
+.nano-unlock .nano-unlock__status[data-state="paid"] .nano-unlock__dot {
+	background: var(--nano-unlock-accent);
+	animation: none;
+}
+
+.nano-unlock .nano-unlock__status[data-state="busy"] .nano-unlock__dot,
+.nano-unlock .nano-unlock__status[data-state="stuck"] .nano-unlock__dot {
+	background: #8a8f98;
+	animation: none;
+}
+
+.nano-unlock .nano-unlock__status[data-state="expired"] .nano-unlock__dot {
+	background: #b32d2e;
+	animation: none;
+}
+
+@keyframes nano-unlock-pulse {
+	0% {
+		box-shadow: 0 0 0 0 rgba(31, 157, 138, 0.5);
+	}
+	70%,
+	100% {
+		box-shadow: 0 0 0 8px rgba(31, 157, 138, 0);
+	}
+}
+
+/* Small text keys: Details, Cancel, Copy, Try again. */
+.nano-unlock .nano-unlock__bar {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px;
+}
+
+.nano-unlock .nano-unlock__card .nano-unlock__more,
+.nano-unlock .nano-unlock__card .nano-unlock__cancel,
+.nano-unlock .nano-unlock__card .nano-unlock__copy,
+.nano-unlock .nano-unlock__card .nano-unlock__retry {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 36px;
+	padding: 6px 12px;
+	border: 1px solid var(--nano-unlock-line);
+	border-radius: 8px;
+	background: transparent;
+	color: inherit;
+	font-size: 0.875em;
+	font-weight: 500;
+	text-decoration: none;
+}
+
+/* Only with a real hover: on a touch screen a tapped key would stay grey. */
+@media (hover: hover) {
+	.nano-unlock .nano-unlock__card .nano-unlock__more:hover,
+	.nano-unlock .nano-unlock__card .nano-unlock__cancel:hover,
+	.nano-unlock .nano-unlock__card .nano-unlock__copy:hover:not([disabled]),
+	.nano-unlock .nano-unlock__card .nano-unlock__retry:hover {
+		background: rgba(127, 127, 127, 0.12);
+		color: inherit;
+	}
+}
+
+.nano-unlock .nano-unlock__card .nano-unlock__more::after {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-right: 2px solid currentColor;
+	border-bottom: 2px solid currentColor;
+	transform: translateY(-2px) rotate(45deg);
+	transition: transform 0.15s ease;
+}
+
+.nano-unlock .nano-unlock__card .nano-unlock__more[aria-expanded="true"]::after {
+	transform: translateY(2px) rotate(-135deg);
+}
+
+.nano-unlock .nano-unlock__card .nano-unlock__retry {
+	border-color: var(--nano-unlock-accent);
+	font-weight: 600;
+}
+
+.nano-unlock .nano-unlock__card .nano-unlock__copy[disabled] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Details: the address and the amount with Copy, the expiry, one sentence. */
+.nano-unlock .nano-unlock__details {
+	width: 100%;
+	padding-top: 12px;
+	border-top: 1px solid var(--nano-unlock-line);
+	font-size: 0.9em;
+	text-align: left;
+}
+
+.nano-unlock .nano-unlock__fields {
+	display: grid;
+	gap: 10px;
+	margin: 0;
+}
+
+.nano-unlock .nano-unlock__field dt {
+	margin: 0;
+	font-size: 0.875em;
 	opacity: 0.75;
 }
 
-.nano-unlock__label--exact {
-	margin-top: 14px;
-}
-
-/* The full amount, unique tail included: long, so it wraps anywhere. */
-.nano-unlock__price {
-	margin: 2px 0 0;
+.nano-unlock .nano-unlock__field dd {
 	display: flex;
-	gap: 8px;
 	align-items: center;
+	gap: 8px;
+	margin: 2px 0 0;
 }
 
-.nano-unlock__amount {
-	font-size: 1.05em;
-	font-weight: 700;
+.nano-unlock .nano-unlock__field code {
+	flex: 1 1 auto;
+	min-width: 0;
+	padding: 0;
+	background: none;
+	font-size: 0.95em;
 	overflow-wrap: anywhere;
+	word-break: break-all;
+}
+
+.nano-unlock .nano-unlock__field .nano-unlock__amount {
+	font-weight: 700;
+	word-break: normal;
+}
+
+.nano-unlock .nano-unlock__left {
 	font-variant-numeric: tabular-nums;
 }
 
-.nano-unlock__usd {
-	margin: 2px 0 0;
-	font-size: 0.85em;
-	opacity: 0.75;
-}
-
-.nano-unlock__fields {
-	margin: 14px 0 0;
-	font-size: 0.85em;
-}
-
-.nano-unlock__fields dt {
-	opacity: 0.75;
-	margin-top: 6px;
-}
-
-.nano-unlock__fields dd {
-	margin: 2px 0 0;
-	display: flex;
-	gap: 8px;
-	align-items: center;
-}
-
-.nano-unlock__fields code {
-	overflow-wrap: anywhere;
-	font-size: 0.95em;
-}
-
-.nano-unlock__copy,
-.nano-unlock__retry,
-.nano-unlock__cancel {
-	border: 1px solid var(--nano-unlock-line);
-	border-radius: 6px;
-	background: transparent;
-	color: inherit;
-	font: inherit;
-	font-size: 0.85em;
-	padding: 2px 8px;
-	cursor: pointer;
-	flex: none;
-}
-
-.nano-unlock__retry {
-	margin-right: 8px;
-	font-weight: 600;
-}
-
-.nano-unlock__hint {
-	font-size: 0.8em;
-	opacity: 0.75;
-	margin: 10px 0 0;
-}
-
-.nano-unlock__status {
-	margin: 12px 0 8px;
-	font-weight: 600;
-	color: var(--nano-unlock-accent-dark);
-}
-
-.nano-unlock__error {
+.nano-unlock .nano-unlock__hint {
 	margin: 12px 0 0;
-	color: #b32d2e;
+	opacity: 0.8;
+	line-height: 1.45;
+}
+
+/* Wider than a phone: the QR code on the left, the rest beside it. */
+@container (min-width: 500px) {
+	.nano-unlock .nano-unlock__card {
+		flex-direction: row;
+		align-items: flex-start;
+		gap: 24px;
+		text-align: left;
+	}
+
+	.nano-unlock .nano-unlock__side {
+		align-items: flex-start;
+		padding-top: 4px;
+	}
+
+	.nano-unlock .nano-unlock__bar {
+		justify-content: flex-start;
+	}
+
+	.nano-unlock .nano-unlock__card .nano-unlock__open {
+		width: auto;
+	}
+}
+
+/* With a mouse (a computer), the QR code is the main thing, scanned by a phone; the wallet key steps back. */
+@media (hover: hover) and (pointer: fine) {
+	.nano-unlock .nano-unlock__qr img {
+		width: 200px;
+		height: 200px;
+	}
+
+	.nano-unlock .nano-unlock__card .nano-unlock__open,
+	.nano-unlock .nano-unlock__card a.nano-unlock__open:visited {
+		min-height: 40px;
+		padding: 8px 18px;
+		background: transparent;
+		color: inherit;
+	}
+
+	.nano-unlock .nano-unlock__card a.nano-unlock__open:hover,
+	.nano-unlock .nano-unlock__card a.nano-unlock__open:focus-visible {
+		background: var(--nano-unlock-accent-hover);
+		color: #fff;
+	}
+}
+
+/* Test mode: the QR code holds only "TEST MODE: do not pay", blurred under a red stamp. */
+.nano-unlock .nano-unlock__card--test .nano-unlock__qr img {
+	filter: blur(6px) grayscale(1);
+	opacity: 0.5;
+}
+
+.nano-unlock .nano-unlock__stamp {
+	position: absolute;
+	inset: 18% 6%;
+	display: grid;
+	place-items: center;
+	padding: 6px;
+	border: 3px solid #fff;
+	border-radius: 10px;
+	background: #b32d2e;
+	color: #fff;
+	font-size: 16px;
+	font-weight: 800;
+	line-height: 1.25;
+	letter-spacing: 0.03em;
+	text-align: center;
+	text-transform: uppercase;
+	transform: rotate(-8deg);
+}
+
+.nano-unlock .nano-unlock__test {
+	margin: 0 0 12px;
+	padding: 6px 10px;
+	border-radius: 6px;
+	background: #b32d2e;
+	color: #fff;
+	font-weight: 700;
+}
+
+.nano-unlock .nano-unlock__error {
+	margin: 0 0 14px;
+	padding-left: 10px;
+	border-left: 3px solid #b32d2e;
 	font-weight: 600;
 }
 
-.nano-unlock__note {
+.nano-unlock .nano-unlock__sr {
+	position: absolute !important;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.nano-unlock .nano-unlock__note {
 	font-size: 0.8em;
 	opacity: 0.7;
 	margin: 0.5em 0 0;
 }
 
-.nano-unlock--paid {
+.nano-unlock.nano-unlock--paid {
 	border-left: 3px solid var(--nano-unlock-accent);
 	padding-left: 16px;
 }
 
-.nano-unlock--preview {
+.nano-unlock.nano-unlock--preview {
 	border: 2px dashed var(--nano-unlock-accent);
 	border-radius: 8px;
 	padding: 8px 16px;
 }
 
-.nano-unlock--preview > .nano-unlock__note:first-child {
+.nano-unlock.nano-unlock--preview > .nano-unlock__note:first-child {
 	margin: 0 0 0.5em;
 }
 
@@ -206,11 +478,12 @@
 	display: none !important;
 }
 
-.nano-unlock__test {
-	margin: 10px 0;
-	padding: 6px 10px;
-	border-radius: 6px;
-	background: #b32d2e;
-	color: #fff;
-	font-weight: 700;
+@media (prefers-reduced-motion: reduce) {
+	.nano-unlock .nano-unlock__dot {
+		animation: none;
+	}
+
+	.nano-unlock .nano-unlock__card .nano-unlock__more::after {
+		transition: none;
+	}
 }

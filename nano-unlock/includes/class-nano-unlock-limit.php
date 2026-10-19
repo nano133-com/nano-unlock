@@ -51,4 +51,22 @@ final class Nano_Unlock_Limit {
 		$ip = (string) apply_filters( 'nano_unlock_client_ip', $ip );
 		return '' === $ip ? 'unknown' : $ip;
 	}
+
+	/**
+	 * A short keyed hash of the visitor's address, to count the amounts one visitor holds.
+	 * An IPv6 address counts by its /64, which one home or phone usually has whole. The
+	 * address itself is never stored.
+	 *
+	 * @param string|null $ip The address (default: this request's).
+	 * @return string 16 hex characters.
+	 */
+	public static function visitor( $ip = null ) {
+		$ip     = null === $ip ? self::client_ip() : (string) $ip;
+		$packed = filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ? inet_pton( $ip ) : false;
+		// An IPv4 address written as IPv6 (::ffff:192.0.2.1) is one address, not a /64.
+		if ( is_string( $packed ) && 16 === strlen( $packed ) && "\0\0\0\0\0\0\0\0\0\0\xff\xff" !== substr( $packed, 0, 12 ) ) {
+			$ip = bin2hex( substr( $packed, 0, 8 ) ) . '/64';
+		}
+		return substr( wp_hash( 'nano_unlock_visitor|' . $ip, 'nonce' ), 0, 16 );
+	}
 }

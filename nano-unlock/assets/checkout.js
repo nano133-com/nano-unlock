@@ -1,16 +1,24 @@
 /**
  * Nano Unlock: the reader's checkout.
  *
- * A click on "Unlock" asks this site for a checkout (a unique amount), shows
- * it as a QR code and a nano: link, and asks the site every two seconds
- * whether the payment arrived. When it has, the site sets a receipt cookie
- * and the page reloads with the paid part in it. The paid part is never in
- * this page before that.
+ * A click on "Unlock" asks this site for a checkout (an amount of its own,
+ * at most four decimals), shows it as a QR code, one line ("Pay $0.05 ·
+ * Ӿ0.1512") and an "Open in wallet" key, and asks the site every two seconds
+ * whether the payment arrived. One status line says where it is. The address,
+ * the amount with Copy, the expiry and one sentence of help are under
+ * "Details", closed at first. When the payment has arrived, the site sets a
+ * receipt cookie and the page reloads with the paid part in it. The paid part
+ * is never in this page before that.
  *
  * The open checkout is kept in sessionStorage (per item), so a reload of
  * this tab picks it up again instead of losing a payment in flight. When the
  * site answers that the payment is recorded but the receipt cookie could not
- * be set, the checkout stays, with a "Try again" button.
+ * be set, the checkout stays, with a "Try again" button. Cancel asks the site
+ * to end the checkout (its amount is then free for the next reader); when the
+ * payment is already there, the site unlocks instead.
+ *
+ * On a site with a test node, the card is stamped "TEST MODE: do not pay":
+ * the QR code holds only those words, and the wallet and copy keys are off.
  */
 ( function () {
 	'use strict';
@@ -76,19 +84,70 @@
 		return n;
 	}
 
-	function copyButton( value ) {
+	function fill( template, a, b ) {
+		return template.replace( '%1$s', a ).replace( '%2$s', b );
+	}
+
+	// Dollars always show cents: "$0.10", never "$0.1" (an older checkout kept in this tab may say "0.1").
+	function dollars( usd ) {
+		var s = String( usd === undefined || usd === null ? '' : usd ).replace( /^\$/, '' );
+		var m = /^(\d+)(?:\.(\d*))?$/.exec( s );
+		if ( ! m ) {
+			return '$' + s;
+		}
+		var cents = ( m[ 2 ] || '' ).replace( /0+$/, '' );
+		while ( cents.length < 2 ) {
+			cents += '0';
+		}
+		return '$' + m[ 1 ] + '.' + cents;
+	}
+
+	function writeClipboard( value ) {
+		if ( navigator.clipboard && window.isSecureContext ) {
+			return navigator.clipboard.writeText( value );
+		}
+		// A site without https has no clipboard API: copy through a selected, unseen text field.
+		return new Promise( function ( resolve, reject ) {
+			var field = node( 'textarea' );
+			field.value = value;
+			field.setAttribute( 'readonly', '' );
+			field.style.position = 'fixed';
+			field.style.opacity = '0';
+			document.body.appendChild( field );
+			field.select();
+			var ok = false;
+			try {
+				ok = document.execCommand( 'copy' );
+			} catch ( e ) {}
+			document.body.removeChild( field );
+			if ( ok ) {
+				resolve();
+			} else {
+				reject();
+			}
+		} );
+	}
+
+	function copyButton( value, what, off ) {
 		var b = node( 'button', 'nano-unlock__copy', t.copy );
 		b.type = 'button';
+		b.setAttribute( 'aria-label', t.copy + ': ' + what );
+		if ( off ) {
+			b.disabled = true;
+			return b;
+		}
 		b.addEventListener( 'click', function () {
-			var done = function () {
-				b.textContent = t.copied;
-				setTimeout( function () {
-					b.textContent = t.copy;
-				}, 1500 );
-			};
-			if ( navigator.clipboard ) {
-				navigator.clipboard.writeText( value ).then( done, function () {} );
-			}
+			writeClipboard( value ).then(
+				function () {
+					b.textContent = t.copied;
+					b.setAttribute( 'aria-label', t.copied + ': ' + what );
+					setTimeout( function () {
+						b.textContent = t.copy;
+						b.setAttribute( 'aria-label', t.copy + ': ' + what );
+					}, 1500 );
+				},
+				function () {}
+			);
 		} );
 		return b;
 	}
@@ -98,6 +157,21 @@
 		var m = Math.floor( s / 60 );
 		var r = s % 60;
 		return m + ':' + ( r < 10 ? '0' : '' ) + r;
+	}
+
+	// The QR code as an image. In test mode it holds only the stamp's words, never a payment.
+	function qrImage( text ) {
+		if ( ! window.qrcode ) {
+			return null;
+		}
+		var qr = window.qrcode( 0, 'M' );
+		qr.addData( text );
+		qr.make();
+		var img = node( 'img' );
+		img.src = qr.createDataURL( 6, 2 );
+		img.alt = '';
+		img.width = img.height = 200;
+		return img;
 	}
 
 	function start( box, resume ) {
@@ -114,21 +188,34 @@
 			clearInterval( clock );
 		}
 
+		function close() {
+			stop();
+			forget( item );
+			box.classList.remove( 'nano-unlock--open' );
+			panel.hidden = true;
+			panel.textContent = '';
+			button.hidden = false;
+			button.disabled = false;
+		}
+
 		// The checkout is over: show why, and offer a new one. keep: a reload may still pick it up.
 		function fail( message, keep ) {
 			stop();
 			if ( ! keep ) {
 				forget( item );
 			}
+			box.classList.remove( 'nano-unlock--open' );
 			panel.hidden = false;
 			panel.textContent = '';
-			panel.appendChild( node( 'p', 'nano-unlock__error', message ) );
+			var p = node( 'p', 'nano-unlock__error', message );
+			p.setAttribute( 'role', 'alert' );
+			panel.appendChild( p );
 			button.disabled = false;
 			button.hidden = false;
 		}
 
 		if ( resume ) {
-			show( resume.c, !! resume.reloaded );
+			show( resume.c, !! resume.reloaded, false );
 			return;
 		}
 
@@ -144,7 +231,7 @@
 				// The server's clock minus this browser's, kept with the checkout for a reload.
 				res.data.skew = res.data.now * 1000 - Date.now();
 				save( item, { c: res.data } );
-				show( res.data, false );
+				show( res.data, false, true );
 			},
 			function () {
 				button.textContent = button.getAttribute( 'data-label' );
@@ -153,101 +240,188 @@
 		);
 
 		// reloaded: the page already reloaded for this paid checkout, and the box is still locked.
-		function show( c, reloaded ) {
+		// focus: move the keyboard focus to the card (it replaces the button that had it).
+		function show( c, reloaded, focus ) {
 			var skew = c.skew || 0;
+			var test = !! c.test;
+			var price = dollars( c.usd );
+			var xno = 'Ӿ' + c.xno;
 			button.hidden = true;
+			box.classList.add( 'nano-unlock--open' );
 			panel.hidden = false;
 			panel.textContent = '';
 
-			var wrap = node( 'div', 'nano-unlock__pay' );
-			var qrLink = node( 'a', 'nano-unlock__qr' );
-			qrLink.href = c.uri;
-			if ( window.qrcode ) {
-				var qr = window.qrcode( 0, 'M' );
-				qr.addData( c.uri );
-				qr.make();
-				var img = node( 'img' );
-				img.src = qr.createDataURL( 5, 2 );
-				img.alt = t.qr + ' Ӿ' + c.xno + ' ' + t.to + ' ' + c.address;
-				img.width = img.height = 200;
-				qrLink.appendChild( img );
-			}
-			wrap.appendChild( qrLink );
+			// In test mode the box above already says "TEST MODE" (from the server); the QR code gets a stamp.
+			var card = node( 'div', 'nano-unlock__card' + ( test ? ' nano-unlock__card--test' : '' ) );
 
-			var info = node( 'div', 'nano-unlock__info' );
-			if ( c.test ) {
-				info.appendChild( node( 'p', 'nano-unlock__test', t.test ) );
+			// The QR code: the main thing on a computer. A tap on it opens the wallet too (the key below is
+			// the same link for keyboards and screen readers, so this one is hidden from them).
+			var qr = node( test ? 'div' : 'a', 'nano-unlock__qr' );
+			qr.setAttribute( 'aria-hidden', 'true' );
+			var img = qrImage( test ? t.stamp : c.uri );
+			if ( img ) {
+				qr.appendChild( img );
 			}
-			// The QR code and "Open in wallet" fill in the exact amount; they come first.
-			info.appendChild( node( 'p', 'nano-unlock__label', t.scan ) );
-			var open = node( 'a', 'nano-unlock__open', t.open );
-			open.href = c.uri;
-			info.appendChild( open );
-
-			// Typed by hand, only the full amount matches: every digit, with the unique tail. Never a rounded one.
-			info.appendChild( node( 'p', 'nano-unlock__label nano-unlock__label--exact', t.pay ) );
-			var price = node( 'p', 'nano-unlock__price' );
-			price.appendChild( node( 'code', 'nano-unlock__amount', 'Ӿ' + c.xno ) );
-			price.appendChild( copyButton( c.xno ) );
-			info.appendChild( price );
-			info.appendChild( node( 'p', 'nano-unlock__usd', '≈ $' + c.usd ) );
-
-			var list = node( 'dl', 'nano-unlock__fields' );
-			list.appendChild( node( 'dt', '', t.address ) );
-			var dd = node( 'dd' );
-			dd.appendChild( node( 'code', '', c.address ) );
-			dd.appendChild( copyButton( c.address ) );
-			list.appendChild( dd );
-			info.appendChild( list );
-			info.appendChild( node( 'p', 'nano-unlock__hint', t.exact ) );
-			var status = node( 'p', 'nano-unlock__status', t.waiting );
-			status.setAttribute( 'role', 'status' );
-			status.setAttribute( 'aria-live', 'polite' );
-			info.appendChild( status );
-			var cancel = node( 'button', 'nano-unlock__cancel', t.cancel );
-			cancel.type = 'button';
-			cancel.addEventListener( 'click', function () {
-				stop();
-				forget( item );
-				panel.hidden = true;
-				panel.textContent = '';
-				button.hidden = false;
-				button.disabled = false;
-			} );
-			info.appendChild( cancel );
-			wrap.appendChild( info );
-			panel.appendChild( wrap );
-
-			var message = t.waiting;
-			function left() {
-				return c.expiresAt - ( Date.now() + skew ) / 1000;
+			if ( test ) {
+				qr.appendChild( node( 'span', 'nano-unlock__stamp', t.stamp ) );
+			} else {
+				qr.href = c.uri;
+				qr.tabIndex = -1;
 			}
-			function paint() {
-				var s = left();
-				status.textContent = s > 0 ? message + ' · ' + mmss( s ) + ' ' + t.left : t.expired;
+			card.appendChild( qr );
+
+			var side = node( 'div', 'nano-unlock__side' );
+			// One line: what to pay, in dollars and in XNO. Read out as "Pay $0.05: 0.1512 XNO".
+			var line = node( 'p', 'nano-unlock__line' );
+			line.tabIndex = -1;
+			var seen = node( 'span', '', fill( t.pay, price, xno ) );
+			seen.setAttribute( 'aria-hidden', 'true' );
+			line.appendChild( seen );
+			line.appendChild( node( 'span', 'nano-unlock__sr', fill( t.paySr, price, c.xno ) ) );
+			side.appendChild( line );
+
+			// The wallet key: the main key on a phone. Off in test mode.
+			var open;
+			if ( test ) {
+				open = node( 'button', 'nano-unlock__open', t.open );
+				open.type = 'button';
+				open.disabled = true;
+			} else {
+				open = node( 'a', 'nano-unlock__open', t.open );
+				open.href = c.uri;
 			}
+			side.appendChild( open );
+
+			// The one status line. Only its words are a live region, so a screen reader hears each change once.
+			var status = node( 'p', 'nano-unlock__status' );
+			status.appendChild( node( 'span', 'nano-unlock__dot' ) ).setAttribute( 'aria-hidden', 'true' );
+			var said = node( 'span', 'nano-unlock__said', t.waiting );
+			said.setAttribute( 'role', 'status' );
+			said.setAttribute( 'aria-live', 'polite' );
+			status.appendChild( said );
+			side.appendChild( status );
+
 			var retry = node( 'button', 'nano-unlock__retry', t.retry );
 			retry.type = 'button';
 			retry.hidden = true;
+			side.appendChild( retry );
+
+			// Details (closed at first) and Cancel.
+			var bar = node( 'div', 'nano-unlock__bar' );
+			var more = node( 'button', 'nano-unlock__more', t.details );
+			more.type = 'button';
+			var detailsId = ( box.id || 'nano-unlock' ) + '-details';
+			more.setAttribute( 'aria-expanded', 'false' );
+			more.setAttribute( 'aria-controls', detailsId );
+			var cancel = node( 'button', 'nano-unlock__cancel', t.cancel );
+			cancel.type = 'button';
+			bar.appendChild( more );
+			bar.appendChild( cancel );
+			side.appendChild( bar );
+
+			var details = node( 'div', 'nano-unlock__details' );
+			details.id = detailsId;
+			details.hidden = true;
+			var list = node( 'dl', 'nano-unlock__fields' );
+			function field( label, value, copy ) {
+				var row = node( 'div', 'nano-unlock__field' );
+				row.appendChild( node( 'dt', '', label ) );
+				var dd = node( 'dd' );
+				dd.appendChild( value );
+				if ( copy ) {
+					dd.appendChild( copy );
+				}
+				row.appendChild( dd );
+				list.appendChild( row );
+				return dd;
+			}
+			field( t.address, node( 'code', 'nano-unlock__address', c.address ), copyButton( c.address, t.address, test ) );
+			field( t.amount, node( 'code', 'nano-unlock__amount', xno ), copyButton( c.xno, t.amount, test ) );
+			var leftText = node( 'span', 'nano-unlock__left' );
+			field( t.expires, leftText, null );
+			details.appendChild( list );
+			details.appendChild( node( 'p', 'nano-unlock__hint', t.explain ) );
+			side.appendChild( details );
+
+			more.addEventListener( 'click', function () {
+				var opening = details.hidden;
+				details.hidden = ! opening;
+				more.setAttribute( 'aria-expanded', opening ? 'true' : 'false' );
+			} );
+
+			card.appendChild( side );
+			panel.appendChild( card );
+			if ( focus ) {
+				line.focus( { preventScroll: true } );
+			}
+
+			var message = t.waiting;
+			var state = 'waiting';
+			function left() {
+				return c.expiresAt - ( Date.now() + skew ) / 1000;
+			}
+			function say( text, kind ) {
+				message = text;
+				state = kind;
+				paint();
+			}
+			function paint() {
+				var s = left();
+				var text = 'waiting' === state && s <= 0 ? t.expired : message;
+				// Only a real change reaches the live region.
+				if ( said.textContent !== text ) {
+					said.textContent = text;
+				}
+				status.setAttribute( 'data-state', 'waiting' === state && s <= 0 ? 'expired' : state );
+				leftText.textContent = s > 0 ? mmss( s ) : t.over;
+			}
+
 			retry.addEventListener( 'click', function () {
 				retry.hidden = true;
 				stopped = false;
-				message = t.waiting;
-				status.textContent = message;
+				say( t.waiting, 'waiting' );
 				poll();
 			} );
-			info.insertBefore( retry, cancel );
+
+			cancel.addEventListener( 'click', function () {
+				cancel.disabled = true;
+				stop();
+				api( 'cancel', { id: c.id } ).then(
+					function ( res ) {
+						var d = res.data || {};
+						if ( res.status === 200 && d.paid ) {
+							unlocked();
+							return;
+						}
+						if ( res.status === 200 && d.pending ) {
+							// The payment is already on its way: keep the checkout.
+							cancel.disabled = false;
+							stopped = false;
+							say( t.pending, 'pending' );
+							clock = setInterval( paint, 1000 );
+							next();
+							return;
+						}
+						close();
+						button.focus();
+					},
+					function () {
+						close();
+						button.focus();
+					}
+				);
+			} );
 
 			// The payment is recorded but this browser has no receipt yet: keep the checkout, ask again on a click.
 			function stuck( text ) {
 				stop();
-				status.textContent = text;
+				say( text, 'stuck' );
 				retry.hidden = false;
 			}
 
 			function unlocked() {
 				stop();
-				status.textContent = t.paid;
+				say( t.paid, 'paid' );
 				save( item, { c: c, reloaded: Date.now() } );
 				var url = new URL( window.location.href );
 				url.searchParams.set( 'nano_unlocked', String( Date.now() ) );
@@ -286,27 +460,32 @@
 							fail( d.message || t.gone );
 							return;
 						}
-						message = res.status >= 500 ? t.busy : d.pending ? t.pending : t.waiting;
-						paint();
+						if ( res.status >= 500 ) {
+							say( t.busy, 'busy' );
+						} else if ( d.pending ) {
+							say( t.pending, 'pending' );
+						} else {
+							say( t.waiting, 'waiting' );
+						}
 						next();
 					},
 					function () {
-						message = t.busy;
+						say( t.busy, 'busy' );
 						next();
 					}
 				);
 			}
 			function next() {
+				clearTimeout( timer );
 				timer = setTimeout( poll, left() > 0 ? POLL_MS : LATE_POLL_MS );
 			}
 
+			paint();
+			clock = setInterval( paint, 1000 );
 			if ( reloaded ) {
-				paint();
 				stuck( t.kept );
 				return;
 			}
-			paint();
-			clock = setInterval( paint, 1000 );
 			next();
 		}
 	}

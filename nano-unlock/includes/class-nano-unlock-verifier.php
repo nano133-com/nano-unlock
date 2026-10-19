@@ -74,7 +74,10 @@ final class Nano_Unlock_Verifier {
 		if ( 'send' !== $subtype || $to !== $address || ! isset( $info['amount'] ) || $info['amount'] !== $amount ) {
 			return 'wrong';
 		}
-		if ( isset( $info['local_timestamp'] ) && is_numeric( $info['local_timestamp'] ) && (int) $info['local_timestamp'] > 0 && (int) $info['local_timestamp'] < $not_before - self::CLOCK_SLACK ) {
+		// The node's own time for the send. A block with no time (none, or 0: from before nodes kept
+		// one) can't be shown to be newer than the checkout, so it never counts.
+		$seen = isset( $info['local_timestamp'] ) && is_numeric( $info['local_timestamp'] ) ? (int) $info['local_timestamp'] : 0;
+		if ( $seen <= 0 || $seen < $not_before - self::CLOCK_SLACK ) {
 			return 'early';
 		}
 		if ( ! isset( $info['confirmed'] ) || 'true' !== $info['confirmed'] ) {

@@ -29,13 +29,23 @@ final class RenderTest extends TestCase {
 	private function pay() {
 		$item = Nano_Unlock_Render::item( self::POST, '0' );
 		$id   = str_repeat( 'c', 24 );
-		$GLOBALS['wpdb']->rows[ $id ] = array(
-			'id'      => $id,
-			'item'    => $item,
-			'status'  => 'paid',
-			'payer'   => self::BUYER,
-			'hash'    => str_repeat( 'A', 64 ),
-			'paid_at' => (string) time(),
+		$GLOBALS['wpdb']->insert(
+			'wp_nano_unlock_checkouts',
+			array(
+				'id'         => $id,
+				'item'       => $item,
+				'post_id'    => self::POST,
+				'usd'        => '0.05',
+				'amount'     => '1512' . str_repeat( '0', 26 ),
+				'address'    => self::SITE,
+				'starter'    => str_repeat( '0', 64 ),
+				'status'     => 'paid',
+				'created_at' => time() - 60,
+				'expires_at' => time() + 840,
+				'payer'      => self::BUYER,
+				'hash'       => str_repeat( 'A', 64 ),
+				'paid_at'    => time(),
+			)
 		);
 		$_COOKIE[ Nano_Unlock_Render::RECEIPTS_COOKIE ] = Nano_Unlock::tokens()->add_receipt( '', $item, $id, 3600 );
 	}
@@ -58,6 +68,37 @@ final class RenderTest extends TestCase {
 		$html = $this->render();
 		$this->assertStringNotContainsString( self::SECRET, $html );
 		$this->assertStringContainsString( 'data-nano-unlock-offer=', $html );
+	}
+
+	public function test_the_locked_box_is_one_line_and_the_key() {
+		$html = $this->render();
+		$this->assertStringContainsString( '>Unlock for $0.05</button>', $html );
+		$this->assertSame( 1, substr_count( $html, '<p' ), 'one line of text, no paragraphs of help' );
+		$this->assertStringContainsString( 'The rest is paid. Pay with Nano (XNO): no account, no card.', $html );
+		$this->assertStringNotContainsString( 'nano-unlock__test', $html, 'no test stamp on a real site' );
+	}
+
+	public function test_a_price_shows_its_cents() {
+		Nano_Unlock_Render::reset( '' );
+		$html = Nano_Unlock_Render::shortcode( array( 'price' => '0.1' ), self::SECRET );
+		$this->assertStringContainsString( 'Unlock for $0.10', $html );
+		$this->assertStringNotContainsString( '$0.1<', $html );
+		Nano_Unlock_Render::reset( '' );
+		$this->assertStringContainsString( 'Unlock for $1.00', Nano_Unlock_Render::shortcode( array( 'price' => '1' ), self::SECRET ) );
+	}
+
+	public function test_test_mode_is_stamped_on_the_locked_box() {
+		$GLOBALS['nano_unlock_wp']['options']['nano_unlock_settings']['node'] = 'http://host.docker.internal:8787';
+		add_filter(
+			'nano_unlock_allow_test_node',
+			function () {
+				return true;
+			}
+		);
+		$html = $this->render();
+		$this->assertStringContainsString( 'TEST MODE: this site uses a test node. Do not send real money.', $html );
+		$GLOBALS['nano_unlock_wp']['filters'] = array();
+		$this->assertStringNotContainsString( 'nano-unlock__button', $this->render(), 'no key at all without the test helper' );
 	}
 
 	public function test_an_archive_never_shows_the_paid_part_even_to_a_buyer() {

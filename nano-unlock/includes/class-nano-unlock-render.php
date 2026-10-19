@@ -249,9 +249,7 @@ final class Nano_Unlock_Render {
 				. '</p>' . $content() . '</div>';
 		}
 
-		/* translators: %s: the price in dollars. */
-		$label = sprintf( __( 'Unlock for $%s', 'nano-unlock' ), $usd );
-		$html  = '<div class="nano-unlock nano-unlock--locked" id="' . esc_attr( 'nano-unlock-' . $slot ) . '"';
+		$html = '<div class="nano-unlock nano-unlock--locked" id="' . esc_attr( 'nano-unlock-' . $slot ) . '"';
 		if ( Nano_Unlock_Settings::ready() ) {
 			$post  = get_post( $post_id );
 			$offer = Nano_Unlock::tokens()->sign(
@@ -266,17 +264,17 @@ final class Nano_Unlock_Render {
 			$html .= ' data-nano-unlock-offer="' . esc_attr( $offer ) . '" data-nano-unlock-item="' . esc_attr( $item ) . '"';
 			self::enqueue();
 		}
-		$html .= '><div class="nano-unlock__head"><span class="nano-unlock__mark" aria-hidden="true">Ӿ</span><strong>' . esc_html__( 'The rest of this is paid', 'nano-unlock' ) . '</strong></div>';
+		$html .= '><p class="nano-unlock__head"><span class="nano-unlock__mark" aria-hidden="true">Ӿ</span><span class="nano-unlock__text">'
+			. ( Nano_Unlock_Settings::ready()
+				? esc_html__( 'The rest is paid. Pay with Nano (XNO): no account, no card.', 'nano-unlock' )
+				: esc_html__( 'The rest is paid. It is not for sale yet.', 'nano-unlock' ) )
+			. '</span></p>';
 		if ( Nano_Unlock_Settings::ready() && Nano_Unlock_Settings::test_mode() ) {
 			$html .= '<p class="nano-unlock__test">' . esc_html__( 'TEST MODE: this site uses a test node. Do not send real money.', 'nano-unlock' ) . '</p>';
 		}
 		if ( Nano_Unlock_Settings::ready() ) {
-			$html .= '<p class="nano-unlock__text">'
-				/* translators: %s: the price in dollars. */
-				. esc_html( sprintf( __( 'Pay $%s in Nano (XNO) to read it. No account and no card: it arrives in about a second and unlocks on this browser.', 'nano-unlock' ), $usd ) )
-				. '</p><button type="button" class="nano-unlock__button">' . esc_html( $label ) . '</button><div class="nano-unlock__checkout" hidden></div>';
-		} else {
-			$html .= '<p class="nano-unlock__text">' . esc_html__( 'This part is not for sale yet.', 'nano-unlock' ) . '</p>';
+			/* translators: %s: the price in dollars. */
+			$html .= '<button type="button" class="nano-unlock__button">' . esc_html( sprintf( __( 'Unlock for $%s', 'nano-unlock' ), $usd ) ) . '</button><div class="nano-unlock__checkout" hidden></div>';
 		}
 		return $html . '</div>';
 	}
@@ -290,11 +288,11 @@ final class Nano_Unlock_Render {
 	 * @return string
 	 */
 	private static function elsewhere( $post_id, $slot, $usd ) {
-		return '<div class="nano-unlock nano-unlock--elsewhere"><div class="nano-unlock__head"><span class="nano-unlock__mark" aria-hidden="true">Ӿ</span><strong>' . esc_html__( 'The rest of this is paid', 'nano-unlock' ) . '</strong></div>'
-			. '<p class="nano-unlock__text"><a href="' . esc_url( get_permalink( $post_id ) . '#nano-unlock-' . $slot ) . '">'
+		return '<div class="nano-unlock nano-unlock--elsewhere"><p class="nano-unlock__head"><span class="nano-unlock__mark" aria-hidden="true">Ӿ</span><span class="nano-unlock__text">'
+			. '<a href="' . esc_url( get_permalink( $post_id ) . '#nano-unlock-' . $slot ) . '">'
 			/* translators: %s: the price in dollars. */
-			. esc_html( sprintf( __( 'Read it on the post\'s page ($%s in Nano)', 'nano-unlock' ), $usd ) )
-			. '</a></p></div>';
+			. esc_html( sprintf( __( 'The rest is paid: read it on the post\'s page ($%s in Nano)', 'nano-unlock' ), $usd ) )
+			. '</a></span></p></div>';
 	}
 
 	/**
@@ -316,27 +314,30 @@ final class Nano_Unlock_Render {
 				'late'  => Nano_Unlock::LATE_SECONDS,
 				'text'  => array(
 					'starting' => __( 'Starting…', 'nano-unlock' ),
-					'scan'     => __( 'Scan the QR code with your Nano wallet, or open it here: the exact amount is filled in for you.', 'nano-unlock' ),
-					'pay'      => __( 'Or pay exactly this amount', 'nano-unlock' ),
-					'qr'       => __( 'QR code to pay', 'nano-unlock' ),
-					'to'       => __( 'to', 'nano-unlock' ),
+					/* translators: 1: the price in dollars ("$0.05"), 2: the amount in XNO ("Ӿ0.1512"). */
+					'pay'      => __( 'Pay %1$s · %2$s', 'nano-unlock' ),
+					/* translators: 1: the price in dollars ("$0.05"), 2: the amount in XNO, digits only ("0.1512"). For screen readers. */
+					'paySr'    => __( 'Pay %1$s: %2$s XNO', 'nano-unlock' ),
 					'open'     => __( 'Open in wallet', 'nano-unlock' ),
+					'details'  => __( 'Details', 'nano-unlock' ),
+					'address'  => __( 'Address', 'nano-unlock' ),
+					'amount'   => __( 'Amount', 'nano-unlock' ),
+					'expires'  => __( 'Expires in', 'nano-unlock' ),
+					'over'     => __( 'Expired', 'nano-unlock' ),
+					'explain'  => __( 'Send exactly this amount to this address from a Nano wallet you control; this page unlocks a few seconds after the payment confirms.', 'nano-unlock' ),
 					'copy'     => __( 'Copy', 'nano-unlock' ),
 					'copied'   => __( 'Copied', 'nano-unlock' ),
-					'address'  => __( 'Address', 'nano-unlock' ),
-					'waiting'  => __( 'Waiting for your payment…', 'nano-unlock' ),
+					'waiting'  => __( 'Waiting for your payment', 'nano-unlock' ),
 					'pending'  => __( 'Payment seen, confirming…', 'nano-unlock' ),
 					'paid'     => __( 'Paid. Unlocking…', 'nano-unlock' ),
-					'expired'  => __( 'This checkout has expired. If you already paid, keep this page open: the payment is still being looked for.', 'nano-unlock' ),
+					'expired'  => __( 'This checkout has expired. If you already paid, keep this page open.', 'nano-unlock' ),
 					'gone'     => __( 'This checkout can no longer be paid. Start again.', 'nano-unlock' ),
 					'busy'     => __( 'The network check is busy; still trying.', 'nano-unlock' ),
 					'reload'   => __( 'This page is out of date. Reload it and try again.', 'nano-unlock' ),
-					'exact'    => __( 'Copy the amount; do not type or round it. Its last digits identify your payment, so a rounded amount will not match and will not unlock. Pay from a wallet you control.', 'nano-unlock' ),
-					'left'     => __( 'left', 'nano-unlock' ),
 					'cancel'   => __( 'Cancel', 'nano-unlock' ),
 					'retry'    => __( 'Try again', 'nano-unlock' ),
 					'kept'     => __( 'Your payment is recorded, but this browser did not keep the unlock cookie. Allow cookies for this site, then press Try again.', 'nano-unlock' ),
-					'test'     => __( 'TEST MODE: do not send real money. This site uses a test node.', 'nano-unlock' ),
+					'stamp'    => __( 'TEST MODE: do not pay', 'nano-unlock' ),
 				),
 			)
 		);

@@ -36,18 +36,33 @@ final class AmountTest extends TestCase {
 		$this->assertNull( Nano_Unlock_Amount::from_usd( 'abc', 1 ) );
 	}
 
-	public function test_tail_only_changes_the_last_six_digits() {
+	public function test_steps_of_a_ten_thousandth() {
+		$price = Nano_Unlock_Amount::from_usd( 0.05, 0.3307 );
+		// $0.05 at $0.3307 is 0.15119… XNO: rounded up to 0.1512.
+		$this->assertSame( '1512' . str_repeat( '0', 26 ), $price );
+		$this->assertSame( '1513' . str_repeat( '0', 26 ), Nano_Unlock_Amount::plus_steps( $price, 1 ) );
+		$this->assertSame( '0.1611', Nano_Unlock_Amount::to_xno( Nano_Unlock_Amount::plus_steps( $price, 99 ) ) );
+		// Across a power of ten: 0.9999 + 0.0001 is 1.
+		$this->assertSame( '1', Nano_Unlock_Amount::to_xno( Nano_Unlock_Amount::plus_steps( Nano_Unlock_Amount::from_steps( 9999 ), 1 ) ) );
+		$this->assertSame( '0.0001', Nano_Unlock_Amount::to_xno( Nano_Unlock_Amount::from_steps( 1 ) ) );
+		// The largest price at the lowest rate still fits: $10000 at $0.05 is 200000 XNO.
+		$this->assertSame( '200000', Nano_Unlock_Amount::to_xno( Nano_Unlock_Amount::from_usd( 10000, 0.05 ) ) );
+	}
+
+	public function test_every_amount_is_short_and_clean() {
 		$price = Nano_Unlock_Amount::from_usd( 0.01, 0.5 );
-		$this->assertSame( substr( $price, 0, -6 ) . '000042', Nano_Unlock_Amount::with_tail( $price, 42 ) );
-		$this->assertSame( substr( $price, 0, -6 ) . '999999', Nano_Unlock_Amount::with_tail( $price, 999999 ) );
-		$this->assertSame( substr( $price, 0, -6 ) . '000001', Nano_Unlock_Amount::with_tail( $price, 0 ) );
-		for ( $i = 0; $i < 200; $i++ ) {
-			$u = Nano_Unlock_Amount::unique( $price );
-			$this->assertSame( strlen( $price ), strlen( $u ) );
-			$this->assertSame( substr( $price, 0, -6 ), substr( $u, 0, -6 ) );
-			$this->assertSame( 1, Nano_Unlock_Amount::compare( $u, $price ) );
-			$this->assertTrue( Nano_Unlock_Amount::is_raw( $u ) );
+		for ( $k = 0; $k < 100; $k++ ) {
+			$a = Nano_Unlock_Amount::plus_steps( $price, $k );
+			$this->assertTrue( Nano_Unlock_Amount::is_clean( $a ) );
+			$this->assertTrue( Nano_Unlock_Amount::is_raw( $a ) );
+			// At most four decimals, so a wallet that rounds to four decimals sends it exactly.
+			$this->assertMatchesRegularExpression( '/^\\d+(\\.\\d{1,4})?$/', Nano_Unlock_Amount::to_xno( $a ) );
+			$this->assertSame( Nano_Unlock_Amount::to_xno( $a ), Nano_Unlock_Amount::to_xno_short( $a ) );
 		}
+		// An older amount, with a random tail in its last digits, is not clean.
+		$this->assertFalse( Nano_Unlock_Amount::is_clean( '151200000000000000000000364625' ) );
+		$this->assertFalse( Nano_Unlock_Amount::is_clean( '100' ) );
+		$this->assertFalse( Nano_Unlock_Amount::is_clean( 'abc' ) );
 	}
 
 	public function test_compare() {

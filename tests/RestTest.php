@@ -36,21 +36,31 @@ final class RestTest extends TestCase {
 	}
 
 	/**
-	 * Starts a checkout for the post's first paid part at $0.01.
+	 * The signed offer for the post's first paid part.
 	 *
-	 * @return array The checkout's answer.
+	 * @param string $usd The price.
+	 * @return string
 	 */
-	private function checkout() {
-		$offer = Nano_Unlock::tokens()->sign(
+	private function offer( $usd = '0.01' ) {
+		return Nano_Unlock::tokens()->sign(
 			'offer',
 			array(
 				'p' => self::POST,
 				's' => '0',
-				'u' => '0.01',
+				'u' => $usd,
 				'm' => '2026-10-01 10:00:00',
 			)
 		);
-		$res   = Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $offer ) ) );
+	}
+
+	/**
+	 * Starts a checkout for the post's first paid part at $0.01.
+	 *
+	 * @param string $usd The price.
+	 * @return array The checkout's answer.
+	 */
+	private function checkout( $usd = '0.01' ) {
+		$res = Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer( $usd ) ) ) );
 		$this->assertInstanceOf( WP_REST_Response::class, $res );
 		return $res->get_data();
 	}
@@ -60,13 +70,15 @@ final class RestTest extends TestCase {
 	 *
 	 * @param string $amount Raw.
 	 */
-	private function pay( $amount ) {
-		$GLOBALS['nano_unlock_wp']['node'] = function ( $body ) use ( $amount ) {
+	private function pay( $amount, $hash = self::HASH, $confirmed = true ) {
+		// A new answer from the node: no shared scan, no resting "not yet".
+		$GLOBALS['nano_unlock_wp']['transients'] = array( 'nano_unlock_rate' => 0.5 );
+		$GLOBALS['nano_unlock_wp']['node']       = function ( $body ) use ( $amount, $hash, $confirmed ) {
 			switch ( $body['action'] ) {
 				case 'receivable':
 					return array(
 						'blocks' => array(
-							self::HASH => array(
+							$hash => array(
 								'amount' => $amount,
 								'source' => self::BUYER,
 							),
@@ -79,7 +91,7 @@ final class RestTest extends TestCase {
 						'block_account'   => self::BUYER,
 						'amount'          => $amount,
 						'local_timestamp' => (string) time(),
-						'confirmed'       => 'true',
+						'confirmed'       => $confirmed ? 'true' : 'false',
 						'subtype'         => 'send',
 						'contents'        => array(
 							'link_as_account' => self::SITE,
@@ -116,24 +128,158 @@ final class RestTest extends TestCase {
 		$this->assertSame( $c['id'], $this->receipt_for( 'post:42:0' )['c'] );
 	}
 
-	public function test_the_checkout_shows_the_full_amount_with_its_unique_tail() {
-		$c    = $this->checkout();
-		$tail = substr( $c['amount'], -6 );
-		$this->assertNotSame( '000000', $tail, 'the amount has a unique tail' );
+	public function test_the_checkout_asks_for_a_short_exact_amount() {
+		$c = $this->checkout();
+		// $0.01 at $0.50 per XNO: exactly Ӿ0.02, with no tail.
+		$this->assertSame( '2' . str_repeat( '0', 28 ), $c['amount'] );
+		$this->assertSame( '0.02', $c['xno'] );
+		$this->assertSame( '0.01', $c['usd'] );
 		$this->assertSame( 'nano:' . self::SITE . '?amount=' . $c['amount'], $c['uri'], 'the QR code and wallet link carry the exact amount' );
-		// The amount shown, read back to raw, is the amount asked: every digit, the tail included.
-		$parts = explode( '.', $c['xno'] );
-		$this->assertCount( 2, $parts );
-		$this->assertSame( $c['amount'], ltrim( $parts[0] . str_pad( $parts[1], Nano_Unlock_Amount::RAW_DIGITS, '0' ), '0' ) );
-		$this->assertStringEndsWith( rtrim( $tail, '0' ), $c['xno'] );
-		$this->assertNotSame( Nano_Unlock_Amount::to_xno_short( $c['amount'] ), $c['xno'], 'not a rounded amount' );
-		$this->assertArrayNotHasKey( 'xnoShort', $c, 'no rounded amount is offered to show' );
+		$this->assertFalse( $c['test'] );
+		// A second open checkout at the same price: one step more.
+		$this->assertSame( '0.0201', $this->checkout()['xno'] );
 
-		// The reader's script shows that full amount (and copies it) in the "Pay exactly" line.
+		// The reader's script shows that amount on the card's one line, and copies it from Details.
 		$js = file_get_contents( dirname( __DIR__ ) . '/nano-unlock/assets/checkout.js' );
-		$this->assertStringNotContainsString( 'xnoShort', $js );
-		$this->assertStringContainsString( "node( 'code', 'nano-unlock__amount', 'Ӿ' + c.xno )", $js );
-		$this->assertStringContainsString( 'copyButton( c.xno )', $js );
+		$this->assertStringContainsString( "var xno = 'Ӿ' + c.xno;", $js );
+		$this->assertStringContainsString( 'fill( t.pay, price, xno )', $js );
+		$this->assertStringContainsString( 'copyButton( c.xno, t.amount, test )', $js );
+	}
+
+	public function test_the_dollar_amount_shows_its_cents() {
+		// An offer printed before this version says "0.1"; the card says "$0.10".
+		$this->assertSame( '0.10', $this->checkout( '0.1' )['usd'] );
+		$this->assertSame( '1.00', $this->checkout( '1' )['usd'] );
+	}
+
+	public function test_the_payment_that_paid_one_checkout_never_pays_the_next_with_the_same_amount() {
+		$first = $this->checkout();
+		$this->pay( $first['amount'] );
+		$this->assertSame( array( 'paid' => true ), $this->claim( $first['id'] )->get_data() );
+		// The amount is free again, and the next reader gets it, while the node still lists that payment.
+		$next = $this->checkout();
+		$this->assertSame( $first['amount'], $next['amount'] );
+		$this->pay( $first['amount'] );
+		$this->assertSame(
+			array(
+				'paid'    => false,
+				'pending' => false,
+			),
+			$this->claim( $next['id'] )->get_data(),
+			'the used payment is skipped, not "already used"'
+		);
+		// The next reader's own payment of the same amount unlocks it.
+		$this->pay( $first['amount'], str_repeat( 'C', 64 ) );
+		$this->assertSame( array( 'paid' => true ), $this->claim( $next['id'] )->get_data() );
+		$this->assertSame( str_repeat( 'C', 64 ), $GLOBALS['wpdb']->rows[ $next['id'] ]['hash'] );
+	}
+
+	public function test_cancel_frees_the_amount_and_ends_the_checkout() {
+		$c = $this->checkout();
+		$this->pay( '3' . str_repeat( '0', 28 ) ); // The node holds no payment of this amount.
+		$res = Nano_Unlock_Rest::cancel( new WP_REST_Request( array( 'id' => $c['id'] ) ) );
+		$this->assertSame( array( 'cancelled' => true ), $res->get_data() );
+		$row = $GLOBALS['wpdb']->rows[ $c['id'] ];
+		$this->assertSame( 'cancelled', $row['status'] );
+		$this->assertNull( $row['amount_lock'] );
+		$this->assertSame( $c['amount'], $this->checkout()['amount'], 'the next reader gets the amount at once' );
+		// A payment for the cancelled checkout no longer counts for it.
+		$this->pay( $c['amount'] );
+		$this->assertSame(
+			array(
+				'paid' => false,
+				'gone' => true,
+			),
+			$this->claim( $c['id'] )->get_data()
+		);
+	}
+
+	public function test_cancel_after_the_payment_arrived_unlocks_instead() {
+		$c = $this->checkout();
+		$this->pay( $c['amount'] );
+		$res = Nano_Unlock_Rest::cancel( new WP_REST_Request( array( 'id' => $c['id'] ) ) );
+		$this->assertSame( array( 'paid' => true ), $res->get_data() );
+		$this->assertNotNull( $this->receipt_for( 'post:42:0' ) );
+		$this->assertSame( 'paid', $GLOBALS['wpdb']->rows[ $c['id'] ]['status'] );
+	}
+
+	public function test_cancel_while_the_payment_confirms_keeps_the_checkout() {
+		$c = $this->checkout();
+		$this->pay( $c['amount'], self::HASH, false );
+		$res = Nano_Unlock_Rest::cancel( new WP_REST_Request( array( 'id' => $c['id'] ) ) );
+		$this->assertSame(
+			array(
+				'cancelled' => false,
+				'pending'   => true,
+			),
+			$res->get_data()
+		);
+		$this->assertSame( $c['amount'], $GLOBALS['wpdb']->rows[ $c['id'] ]['amount_lock'] );
+	}
+
+	public function test_cancel_without_the_node_keeps_the_amount_held() {
+		$c                                 = $this->checkout();
+		$GLOBALS['nano_unlock_wp']['node'] = null;
+		$res                               = Nano_Unlock_Rest::cancel( new WP_REST_Request( array( 'id' => $c['id'] ) ) );
+		$this->assertError( $res, 503, 'nano_unlock' );
+		$row = $GLOBALS['wpdb']->rows[ $c['id'] ];
+		$this->assertSame( 'waiting', $row['status'], 'a payment may be on its way: the amount stays held' );
+		$this->assertSame( $c['amount'], $row['amount_lock'] );
+	}
+
+	public function test_cancel_after_the_late_window_asks_no_node() {
+		$c = $this->checkout();
+		$GLOBALS['wpdb']->set( $c['id'], array( 'expires_at' => time() - Nano_Unlock::LATE_SECONDS - 1 ) );
+		$asked                             = false;
+		$GLOBALS['nano_unlock_wp']['node'] = function () use ( &$asked ) {
+			$asked = true;
+			return array( 'error' => 'unexpected' );
+		};
+		$res = Nano_Unlock_Rest::cancel( new WP_REST_Request( array( 'id' => $c['id'] ) ) );
+		$this->assertSame( array( 'cancelled' => true ), $res->get_data() );
+		$this->assertFalse( $asked, 'a payment no longer counts then, so the node is not asked' );
+		$this->assertSame( 'cancelled', $GLOBALS['wpdb']->rows[ $c['id'] ]['status'] );
+	}
+
+	public function test_only_the_starting_browser_can_cancel() {
+		$c = $this->checkout();
+		$this->pay( '3' . str_repeat( '0', 28 ) );
+		$_COOKIE[ Nano_Unlock_Rest::STARTER_COOKIE ] = str_repeat( 'f', 64 );
+		$this->assertError( Nano_Unlock_Rest::cancel( new WP_REST_Request( array( 'id' => $c['id'] ) ) ), 403, 'nano_unlock_not_starter' );
+		$this->assertSame( 'waiting', $GLOBALS['wpdb']->rows[ $c['id'] ]['status'] );
+	}
+
+	public function test_one_visitor_cannot_hold_every_amount() {
+		for ( $i = 0; $i < Nano_Unlock_Store::MAX_HELD; $i++ ) {
+			$this->checkout();
+		}
+		$this->assertError( Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer() ) ) ), 429, 'nano_unlock' );
+		// Another visitor is not affected.
+		$_SERVER['REMOTE_ADDR'] = '198.51.100.20';
+		$this->assertSame( '0.021', $this->checkout()['xno'], 'one step after the first visitor\'s ten' );
+	}
+
+	public function test_all_steps_held_answers_busy_in_plain_words() {
+		$price = Nano_Unlock_Amount::from_usd( 0.01, 0.5 );
+		for ( $i = 0; $i < Nano_Unlock_Store::MAX_STEPS; $i++ ) {
+			Nano_Unlock_Store::create(
+				array(
+					'item'       => 'post:42:0',
+					'post_id'    => self::POST,
+					'usd'        => '0.01',
+					'address'    => self::SITE,
+					'starter'    => str_repeat( '0', 64 ),
+					'visitor'    => sprintf( '%016x', $i ),
+					'created_at' => time(),
+					'expires_at' => time() + 900,
+				),
+				$price,
+				Nano_Unlock::LATE_SECONDS
+			);
+		}
+		$res = Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer() ) ) );
+		$this->assertError( $res, 503, 'nano_unlock' );
+		$this->assertStringContainsString( 'Try again in a moment', $res->get_error_message() );
 	}
 
 	public function test_no_paid_answer_when_the_receipt_cookie_cannot_be_set() {
@@ -164,16 +310,7 @@ final class RestTest extends TestCase {
 
 	public function test_no_checkout_when_the_starter_cookie_cannot_be_set() {
 		$this->cookies_work = false;
-		$offer              = Nano_Unlock::tokens()->sign(
-			'offer',
-			array(
-				'p' => self::POST,
-				's' => '0',
-				'u' => '0.01',
-				'm' => '2026-10-01 10:00:00',
-			)
-		);
-		$this->assertError( Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $offer ) ) ), 503, 'nano_unlock' );
+		$this->assertError( Nano_Unlock_Rest::checkout( new WP_REST_Request( array( 'offer' => $this->offer() ) ) ), 503, 'nano_unlock' );
 		$this->assertSame( array(), $GLOBALS['wpdb']->rows, 'no amount is held for a browser that could never claim it' );
 	}
 
@@ -192,7 +329,7 @@ final class RestTest extends TestCase {
 		$this->claim( $c['id'] );
 		unset( $_COOKIE[ Nano_Unlock_Render::RECEIPTS_COOKIE ] );
 		$this->assertSame( array( 'paid' => true ), $this->claim( $c['id'] )->get_data(), 'a browser that lost the answer' );
-		$GLOBALS['wpdb']->rows[ $c['id'] ]['paid_at'] = (string) ( time() - 2 * HOUR_IN_SECONDS );
+		$GLOBALS['wpdb']->set( $c['id'], array( 'paid_at' => time() - 2 * HOUR_IN_SECONDS ) );
 		unset( $_COOKIE[ Nano_Unlock_Render::RECEIPTS_COOKIE ] );
 		$this->assertError( $this->claim( $c['id'] ), 410, 'nano_unlock_too_late' );
 	}

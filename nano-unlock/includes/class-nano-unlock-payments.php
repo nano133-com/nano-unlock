@@ -24,18 +24,22 @@ final class Nano_Unlock_Payments {
 	 * Whether the checkout is paid.
 	 *
 	 * @param array $checkout The checkout row.
+	 * @param bool  $fresh    Ask the node now, not the scan shared for SCAN_SECONDS (before a cancel).
 	 * @return array{status:string, hash?:string, payer?:string} status "paid", "pending" or "waiting".
 	 * @throws Nano_Unlock_Busy When a node can't answer.
 	 */
-	public static function check( array $checkout ) {
+	public static function check( array $checkout, $fresh = false ) {
 		$settings = Nano_Unlock_Settings::get();
 		$node     = new Nano_Unlock_Node( $settings['node'] );
 		$second   = '' !== $settings['node2'] ? new Nano_Unlock_Node( $settings['node2'] ) : null;
 		$address  = $checkout['address'];
 		$amount   = $checkout['amount'];
 
-		$scan       = self::scan( $node, $address );
+		$scan       = self::scan( $node, $address, $fresh );
 		$candidates = Nano_Unlock_Verifier::candidates( $scan['receivable'], $scan['history'], $amount );
+		// An amount comes back for a new checkout once its last one is paid: the payment that paid
+		// that one is still in the scan, with the same amount, and must never count again.
+		$candidates = array_values( array_diff( $candidates, Nano_Unlock_Store::used_hashes( $candidates ) ) );
 		$status     = array( 'status' => 'waiting' );
 		foreach ( $candidates as $hash ) {
 			$info = $node->call(
@@ -83,15 +87,16 @@ final class Nano_Unlock_Payments {
 	 *
 	 * @param Nano_Unlock_Node $node    The node.
 	 * @param string           $address The site's address.
+	 * @param bool             $fresh   Skip the shared scan.
 	 * @return array{receivable:array, history:array}
 	 * @throws Nano_Unlock_Busy When the node can't answer.
 	 */
-	private static function scan( Nano_Unlock_Node $node, $address ) {
+	private static function scan( Nano_Unlock_Node $node, $address, $fresh = false ) {
 		// Only amounts an open checkout can ask for: dust sent to the address can't push a payment out of the list.
 		$threshold = Nano_Unlock_Store::smallest_open_amount( Nano_Unlock::LATE_SECONDS );
 		$threshold = null === $threshold ? '1' : $threshold;
 		$key       = 'nano_unlock_scan_' . substr( hash( 'sha256', $node->url() . '|' . $address . '|' . $threshold ), 0, 24 );
-		$cached    = get_transient( $key );
+		$cached    = $fresh ? false : get_transient( $key );
 		if ( is_array( $cached ) && isset( $cached['at'] ) && microtime( true ) - $cached['at'] < self::SCAN_SECONDS ) {
 			return $cached;
 		}

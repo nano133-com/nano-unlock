@@ -90,6 +90,18 @@ final class VerifierTest extends TestCase {
 		// Within the clock allowance it still counts.
 		$close = self::send( array( 'local_timestamp' => (string) ( $start - 60 ) ) );
 		$this->assertSame( 'paid', Nano_Unlock_Verifier::check_send( $close, self::SITE, self::AMOUNT, $start ) );
+		$this->assertSame( 'early', Nano_Unlock_Verifier::check_send( self::send( array( 'local_timestamp' => (string) ( $start - 121 ) ) ), self::SITE, self::AMOUNT, $start ) );
+	}
+
+	public function test_a_payment_with_no_time_does_not_count() {
+		// Amounts repeat now (0.1000 XNO is a common amount): a block whose time the node doesn't know
+		// (0, or none: from before nodes kept one) can't be shown to be newer than the checkout.
+		$start   = 1790000000;
+		$no_time = self::send();
+		unset( $no_time['local_timestamp'] );
+		$this->assertSame( 'early', Nano_Unlock_Verifier::check_send( $no_time, self::SITE, self::AMOUNT, $start ) );
+		$this->assertSame( 'early', Nano_Unlock_Verifier::check_send( self::send( array( 'local_timestamp' => '0' ) ), self::SITE, self::AMOUNT, $start ) );
+		$this->assertSame( 'early', Nano_Unlock_Verifier::check_send( self::send( array( 'local_timestamp' => 'soon' ) ), self::SITE, self::AMOUNT, $start ) );
 	}
 
 	public function test_old_prefix_is_the_same_account() {

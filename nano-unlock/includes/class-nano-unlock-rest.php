@@ -8,11 +8,12 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * POST /wp-json/nano-unlock/v1/checkout {offer}  a unique amount to pay for one item
+ * POST /wp-json/nano-unlock/v1/checkout {offer}  an amount of its own to pay for one item
  * POST /wp-json/nano-unlock/v1/claim {id}        has the payment arrived? "paid" only once this browser holds its receipt
+ * POST /wp-json/nano-unlock/v1/cancel {id}       ends the checkout and frees its amount (unless its payment is already there)
  *
- * Both need the page's REST nonce, both are rate limited per visitor address,
- * and only the browser that started a checkout gets its receipt.
+ * All need the page's REST nonce, all are rate limited per visitor address,
+ * and only the browser that started a checkout gets its receipt or may cancel it.
  */
 final class Nano_Unlock_Rest {
 
@@ -44,21 +45,23 @@ final class Nano_Unlock_Rest {
 				),
 			)
 		);
-		register_rest_route(
-			'nano-unlock/v1',
-			'/claim',
-			array(
-				'methods'             => 'POST',
-				'callback'            => array( __CLASS__, 'claim' ),
-				'permission_callback' => array( __CLASS__, 'nonce' ),
-				'args'                => array(
-					'id' => array(
-						'type'     => 'string',
-						'required' => true,
+		foreach ( array( 'claim', 'cancel' ) as $route ) {
+			register_rest_route(
+				'nano-unlock/v1',
+				'/' . $route,
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( __CLASS__, $route ),
+					'permission_callback' => array( __CLASS__, 'nonce' ),
+					'args'                => array(
+						'id' => array(
+							'type'     => 'string',
+							'required' => true,
+						),
 					),
-				),
-			)
-		);
+				)
+			);
+		}
 	}
 
 	/**
@@ -120,30 +123,38 @@ final class Nano_Unlock_Rest {
 			// Without the starter cookie this browser could pay but never claim its receipt.
 			return self::error( 503, __( 'This browser did not accept the checkout cookie. Allow cookies for this site, then try again.', 'nano-unlock' ) );
 		}
-		$now = time();
-		$row = Nano_Unlock_Store::create(
-			array(
-				'item'       => Nano_Unlock_Render::item( $post->ID, (string) $offer['s'] ),
-				'post_id'    => $post->ID,
-				'usd'        => $usd,
-				'address'    => $settings['address'],
-				'starter'    => hash( 'sha256', $starter ),
-				'created_at' => $now,
-				'expires_at' => $now + Nano_Unlock::CHECKOUT_SECONDS,
-			),
-			$raw,
-			Nano_Unlock::LATE_SECONDS
-		);
-		if ( ! $row ) {
-			return self::error( 503, __( 'Busy, try again.', 'nano-unlock' ) );
+		// Each open checkout holds its amount for over an hour: one visitor alone must never hold them all.
+		$visitor = Nano_Unlock_Limit::visitor( $ip );
+		if ( Nano_Unlock_Store::held_by( $visitor, Nano_Unlock::LATE_SECONDS ) >= Nano_Unlock_Store::MAX_HELD ) {
+			return self::error( 429, __( 'Too many checkouts are open from your connection. Cancel one, or wait a few minutes.', 'nano-unlock' ) );
 		}
+		$now = time();
+		try {
+			$row = Nano_Unlock_Store::create(
+				array(
+					'item'       => Nano_Unlock_Render::item( $post->ID, (string) $offer['s'] ),
+					'post_id'    => $post->ID,
+					'usd'        => $usd,
+					'address'    => $settings['address'],
+					'starter'    => hash( 'sha256', $starter ),
+					'visitor'    => $visitor,
+					'created_at' => $now,
+					'expires_at' => $now + Nano_Unlock::CHECKOUT_SECONDS,
+				),
+				$raw,
+				Nano_Unlock::LATE_SECONDS
+			);
+		} catch ( Nano_Unlock_Busy $e ) {
+			return self::error( 503, __( 'Busy right now: many readers are paying at this price. Try again in a moment.', 'nano-unlock' ) );
+		}
+		$shown = Nano_Unlock_Settings::price( $usd );
 		return self::ok(
 			array(
 				'id'        => $row['id'],
 				'amount'    => $row['amount'],
-				// The full unique amount: a rounded one (without the tail) would never match the payment.
+				// Every digit of the amount: at most four decimals (an older checkout's amount keeps its whole tail).
 				'xno'       => Nano_Unlock_Amount::to_xno( $row['amount'] ),
-				'usd'       => $usd,
+				'usd'       => null === $shown ? $usd : $shown,
 				'rate'      => $rate,
 				'address'   => $row['address'],
 				'uri'       => 'nano:' . $row['address'] . '?amount=' . $row['amount'],
@@ -173,7 +184,8 @@ final class Nano_Unlock_Rest {
 		if ( 'paid' === $row['status'] ) {
 			return self::paid( $row );
 		}
-		if ( time() > (int) $row['expires_at'] + Nano_Unlock::LATE_SECONDS ) {
+		// A cancelled checkout gave its amount back: a payment of that amount may now belong to another reader.
+		if ( 'waiting' !== $row['status'] || time() > (int) $row['expires_at'] + Nano_Unlock::LATE_SECONDS ) {
 			return self::ok(
 				array(
 					'paid' => false,
@@ -205,6 +217,73 @@ final class Nano_Unlock_Rest {
 			);
 		}
 
+		return self::record( $id, $found );
+	}
+
+	/**
+	 * Cancels a checkout, so that its amount is free at once for the next reader.
+	 *
+	 * The node is asked first, without the shared scan: when the payment is already
+	 * there, the checkout is paid, not cancelled (a reader may press Cancel just after
+	 * paying), and a payment seen but not confirmed yet keeps it open. When the node
+	 * can't answer, nothing is cancelled: the amount stays held until the checkout's
+	 * time is over, as when a reader just leaves the page.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public static function cancel( WP_REST_Request $request ) {
+		if ( ! Nano_Unlock_Limit::allow( 'claim', 180, MINUTE_IN_SECONDS, Nano_Unlock_Limit::client_ip() ) ) {
+			return self::error( 429, __( 'That is a lot of payment checks at once. Please wait a moment.', 'nano-unlock' ) );
+		}
+		$id  = (string) $request->get_param( 'id' );
+		$row = Nano_Unlock_Store::get( $id );
+		if ( ! $row ) {
+			return self::error( 404, __( 'No such checkout.', 'nano-unlock' ) );
+		}
+		if ( ! self::is_starter( $row ) ) {
+			return self::error( 403, __( 'This checkout was started in another browser.', 'nano-unlock' ), 'nano_unlock_not_starter' );
+		}
+		if ( 'paid' === $row['status'] ) {
+			return self::paid( $row );
+		}
+		if ( 'waiting' !== $row['status'] || time() > (int) $row['expires_at'] + Nano_Unlock::LATE_SECONDS ) {
+			// Over (cancelled, or past the time a payment counts): nothing to look for.
+			Nano_Unlock_Store::cancel( $id );
+			return self::ok( array( 'cancelled' => true ) );
+		}
+		try {
+			$found = Nano_Unlock_Payments::check( $row, true );
+		} catch ( Nano_Unlock_Busy $e ) {
+			return self::error( 503, __( 'The network check is busy, try again in a moment.', 'nano-unlock' ) );
+		}
+		if ( 'pending' === $found['status'] ) {
+			return self::ok(
+				array(
+					'cancelled' => false,
+					'pending'   => true,
+				)
+			);
+		}
+		if ( 'paid' === $found['status'] && 'used' !== Nano_Unlock_Store::mark_paid( $id, $found['hash'], $found['payer'] ) ) {
+			$row = Nano_Unlock_Store::get( $id );
+			if ( $row && 'paid' === $row['status'] ) {
+				return self::paid( $row );
+			}
+			return self::error( 503, __( 'The network check is busy, try again in a moment.', 'nano-unlock' ) );
+		}
+		Nano_Unlock_Store::cancel( $id );
+		return self::ok( array( 'cancelled' => true ) );
+	}
+
+	/**
+	 * Records a payment the node confirmed for a checkout, and answers as claim() does.
+	 *
+	 * @param string $id    The checkout.
+	 * @param array  $found What Nano_Unlock_Payments::check() found ("paid", with its hash and payer).
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private static function record( $id, array $found ) {
 		$result = Nano_Unlock_Store::mark_paid( $id, $found['hash'], $found['payer'] );
 		if ( 'used' === $result ) {
 			return self::error( 409, __( 'That payment was already used.', 'nano-unlock' ) );

@@ -128,15 +128,35 @@ const page = await ctx.newPage();
 await page.goto(urlA);
 const box = page.locator(".nano-unlock--locked");
 if (SHOTS) await page.screenshot({ path: join(SHOTS, "2-locked-post.png") });
+check((await box.locator("p").count()) === 2 && (await box.locator(".nano-unlock__button").textContent()) === "Unlock for $0.01", "the locked box: one line, the test stamp and the key \"Unlock for $0.01\"");
+// The checkout's own answer (the card shows no wallet link in test mode, so the amount is read here).
+const checkoutA = page.waitForResponse((r) => r.url().includes("nano-unlock/v1/checkout"));
 await box.locator(".nano-unlock__button").click();
-await page.locator(".nano-unlock__pay").waitFor();
-const uri = await page.locator(".nano-unlock__open").getAttribute("href");
-const m = /^nano:(nano_[a-z0-9]+)\?amount=(\d+)$/.exec(uri ?? "");
-check(!!m && m[1] === SITE_ADDR, `the checkout asks for a payment to the site's address (${uri?.slice(0, 40)}…)`);
-const amountA = m?.[2] ?? "";
-check(amountA.startsWith("2") && amountA.length === 29, `$0.01 at $0.50/XNO is 0.02 XNO plus a unique tail (${amountA})`);
-const shownA = (await page.locator(".nano-unlock__amount").textContent()) ?? "";
-check(shownA === "Ӿ0." + amountA.padStart(30, "0").replace(/0+$/, ""), `"pay exactly" shows the full amount with its tail (${shownA})`);
+const resA = await (await checkoutA).json();
+await page.locator(".nano-unlock__card").waitFor();
+const m = /^nano:(nano_[a-z0-9]+)\?amount=(\d+)$/.exec(resA.uri ?? "");
+check(!!m && m[1] === SITE_ADDR && m[2] === resA.amount, `the checkout asks for a payment to the site's address (${resA.uri?.slice(0, 40)}…)`);
+const amountA = resA.amount ?? "";
+check(amountA === "2" + "0".repeat(28) && resA.xno === "0.02", `$0.01 at $0.50/XNO is exactly Ӿ0.02, with no tail (${resA.xno})`);
+const line = (await box.locator(".nano-unlock__line [aria-hidden='true']").innerText()).trim();
+const lineSr = (await box.locator(".nano-unlock__line .nano-unlock__sr").textContent()).trim();
+check(line === "Pay $0.01 · Ӿ0.02" && lineSr === "Pay $0.01: 0.02 XNO", `the card's one line: "${line}" (read out as "${lineSr}")`);
+// Test mode: stamped "do not pay", the QR code holds no payment, and the wallet and copy keys are off.
+check((await box.locator(".nano-unlock__card--test .nano-unlock__stamp").textContent())?.includes("do not pay"), "test mode: the QR code is stamped \"do not pay\"");
+check((await box.locator("a.nano-unlock__open, a.nano-unlock__qr, a[href^='nano:']").count()) === 0 && (await box.locator("button.nano-unlock__open[disabled]").count()) === 1, "test mode: no nano: link anywhere, and \"Open in wallet\" is off");
+check((await box.locator(".nano-unlock__copy:not([disabled])").count()) === 0, "test mode: the copy keys are off");
+// Status: one polite live region. Details: a real button, closed at first.
+const said = box.locator(".nano-unlock__status [role='status'][aria-live='polite']");
+check((await said.count()) === 1 && (await said.textContent()) === "Waiting for your payment", "the status line is a polite live region: \"Waiting for your payment\"");
+const more = box.locator("button.nano-unlock__more");
+check((await more.getAttribute("aria-expanded")) === "false" && !(await box.locator(".nano-unlock__details").isVisible()), "Details is a button, closed at first (aria-expanded=false)");
+check(!(await box.locator(".nano-unlock__card").innerText()).includes(SITE_ADDR), "the face of the card shows no address");
+await more.focus();
+await page.keyboard.press("Enter");
+const details = (await box.locator(".nano-unlock__details").innerText()).replace(/\s+/g, " ");
+check((await more.getAttribute("aria-expanded")) === "true" && details.includes(SITE_ADDR) && details.includes("Ӿ0.02") && /Expires in \d+:\d\d/.test(details), "Enter opens Details: the address, the amount, the expiry");
+await page.keyboard.press("Enter");
+check((await more.getAttribute("aria-expanded")) === "false", "Enter closes it again");
 await page.waitForTimeout(600);
 if (SHOTS) await box.screenshot({ path: join(SHOTS, "3-checkout.png") });
 
@@ -182,13 +202,33 @@ await fp.goto(urlB);
 check(!(await fp.content()).includes(SECRET_B), "a receipt for one post doesn't unlock another");
 await friend.close();
 
+// ---- 3b. Cancel in the browser ---------------------------------------------------------------------------
+console.log("\n— cancel");
+const cx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+const cp = await cx.newPage();
+await cp.goto(urlB);
+const checkoutC = cp.waitForResponse((r) => r.url().includes("nano-unlock/v1/checkout"));
+await cp.locator(".nano-unlock__button").click();
+const cId = (await (await checkoutC).json()).id;
+await cp.locator(".nano-unlock__card").waitFor();
+check(await cp.evaluate(() => document.activeElement?.classList.contains("nano-unlock__line")), "the card takes the keyboard focus from the key it replaces (its one line)");
+const cancelled = cp.waitForResponse((r) => r.url().includes("nano-unlock/v1/cancel"));
+await cp.locator(".nano-unlock__cancel").click();
+await cancelled;
+await cp.locator(".nano-unlock__button").waitFor();
+const cRow = wp("db", "query", `SELECT status, IFNULL(amount_lock, 'free') FROM wp_nano_unlock_checkouts WHERE id='${cId}'`, "--skip-column-names");
+check(!(await cp.locator(".nano-unlock__card").count()) && (await cp.evaluate(() => document.activeElement?.classList.contains("nano-unlock__button"))), "Cancel closes the card, and the focus goes back to the Unlock key");
+check(/^cancelled\s+free$/.test(cRow), `the cancelled checkout's amount is free at once (${cRow.replace(/\s+/, " ")})`);
+await cx.close();
+
 // ---- 4. The owner's wallet already received it (history path), on the block post -----------------------
 console.log("\n— the wallet received the payment before the check (history)");
 await page.goto(urlB);
+const checkoutB = page.waitForResponse((r) => r.url().includes("nano-unlock/v1/checkout"));
 await page.locator(".nano-unlock__button").click();
-await page.locator(".nano-unlock__pay").waitFor();
-const amountB = /amount=(\d+)/.exec((await page.locator(".nano-unlock__open").getAttribute("href")) ?? "")?.[1] ?? "";
-check(amountB.startsWith("1") && amountB.length === 30, `$0.05 at $0.50/XNO is 0.1 XNO plus a tail (${amountB})`);
+const amountB = (await (await checkoutB).json()).amount ?? "";
+await page.locator(".nano-unlock__card").waitFor();
+check(amountB === "1" + "0".repeat(29), `$0.05 at $0.50/XNO is exactly Ӿ0.1 (${amountB})`);
 const payB = await mock("/__pay", { to: SITE_ADDR, amount: amountB, from: BUYER2 });
 await mock("/__receive", { hash: payB.hash });
 await page.waitForURL(/nano_unlocked=/, { timeout: 10000 });
@@ -199,38 +239,63 @@ console.log("\n— the REST rules");
 const fresh = await (await fetch(urlA)).text();
 const nonce = /"nonce":"([0-9a-f]+)"/.exec(fresh)?.[1];
 const offer = /data-nano-unlock-offer="([^"]+)"/.exec(fresh)?.[1];
-const api = async (path, body, { withNonce = true, cookie = "" } = {}) => {
+const api = async (path, body, { withNonce = true, cookie = "", ip = "" } = {}) => {
   const r = await fetch(`${SITE}/?rest_route=/nano-unlock/v1/${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(withNonce ? { "x-wp-nonce": nonce } : {}), ...(cookie ? { cookie } : {}) },
+    headers: { "content-type": "application/json", ...(withNonce ? { "x-wp-nonce": nonce } : {}), ...(cookie ? { cookie } : {}), ...(ip ? { "x-nano-unlock-test-ip": ip } : {}) },
     body: JSON.stringify(body),
   });
   return { status: r.status, data: await r.json(), setCookie: r.headers.getSetCookie() };
 };
+const STEP = (raw, k) => String(BigInt(raw) + BigInt(k) * 10n ** 26n);
 check((await api("checkout", { offer }, { withNonce: false })).status === 403, "no nonce: 403");
 const tampered = offer.replace(/^([A-Za-z0-9_-]{10})./, (s, a) => a + (s.endsWith("A") ? "B" : "A"));
 check((await api("checkout", { offer: tampered })).status === 400, "a changed offer (another price or post): 400");
 const c1 = await api("checkout", { offer });
-check(c1.status === 200 && c1.data.amount !== amountA, "a new checkout gets its own amount");
 const starterCookie = c1.setCookie.find((c) => c.startsWith("nano_unlock_starter="))?.split(";")[0];
 check(!!starterCookie, "the checkout sets this browser's starter cookie");
+// Post A's amount was freed when it was paid: the next reader gets it again, and the payment that paid
+// post A (still in the node's history, with the same amount) must not pay this one.
+check(c1.status === 200 && c1.data.amount === amountA, `a paid amount is free again for the next checkout (${c1.data.xno})`);
+const c1claim = await api("claim", { id: c1.data.id }, { cookie: starterCookie });
+check(c1claim.status === 200 && c1claim.data.paid === false, "the payment that paid the last checkout of that amount does not pay this one");
+const c2 = await api("checkout", { offer }, { cookie: starterCookie });
+check(c2.status === 200 && c2.data.amount === STEP(amountA, 1) && c2.data.xno === "0.0201", `while c1 holds Ӿ0.02, the next checkout gets one step more (${c2.data.xno})`);
 
 // One payment unlocks one checkout, once: a second checkout that asks for the SAME amount (forced here,
-// the plugin never does that) is refused when that payment is already used.
+// the plugin never gives two open checkouts one amount) never sees a used payment.
 wp("db", "query", `INSERT INTO wp_nano_unlock_checkouts (id,item,post_id,usd,amount,amount_lock,address,starter,status,created_at,expires_at) VALUES ('${"f".repeat(24)}','post:${postA}:0',${postA},0.01,'${amountA}',NULL,'${SITE_ADDR}','${"0".repeat(64)}','waiting',UNIX_TIMESTAMP()-60,UNIX_TIMESTAMP()+900)`);
 const replay = await api("claim", { id: "f".repeat(24) });
-check(replay.status === 409, `a used payment can't pay a second checkout (${replay.status} ${replay.data.message ?? ""})`);
+check(replay.status === 200 && replay.data.paid === false, `a used payment can't pay a second checkout (${replay.status} paid=${replay.data.paid})`);
 
 // Another browser (no starter cookie) asking about a paid checkout gets no receipt.
 const paidId = wp("db", "query", `SELECT id FROM wp_nano_unlock_checkouts WHERE status='paid' AND amount='${amountA}'`, "--skip-column-names");
 const other = await api("claim", { id: paidId });
 check(other.status === 403 && other.data.code === "nano_unlock_not_starter" && !other.setCookie.some((c) => c.startsWith("nano_unlock_receipts=")), "another browser gets 403, not 'paid', and no receipt");
 
-// The node is down: the claim fails closed with 503.
+// Cancel: only the starting browser; the amount is free at once; the checkout is over.
+check((await api("cancel", { id: c1.data.id })).status === 403, "another browser can't cancel a checkout");
+const cancel1 = await api("cancel", { id: c1.data.id }, { cookie: starterCookie });
+check(cancel1.status === 200 && cancel1.data.cancelled === true, "the starting browser cancels it");
+const gone = await api("claim", { id: c1.data.id }, { cookie: starterCookie });
+check(gone.status === 200 && gone.data.gone === true, "a cancelled checkout can't be paid any more");
+const c3 = await api("checkout", { offer }, { cookie: starterCookie });
+check(c3.status === 200 && c3.data.amount === amountA, "the cancelled amount goes to the next checkout at once (the lowest free step)");
+// Cancel after the payment arrived: it unlocks instead.
+await mock("/__pay", { to: SITE_ADDR, amount: c3.data.amount, from: BUYER2 });
+const cancel3 = await api("cancel", { id: c3.data.id }, { cookie: starterCookie });
+check(cancel3.status === 200 && cancel3.data.paid === true && cancel3.setCookie.some((c) => c.startsWith("nano_unlock_receipts=")), "Cancel after the payment arrived unlocks instead (and sends the receipt)");
+await api("cancel", { id: c2.data.id }, { cookie: starterCookie });
+
+// The node is down: the claim fails closed with 503, and Cancel keeps the amount held.
+const c4 = await api("checkout", { offer }, { cookie: starterCookie });
 await mock("/__down", { down: true });
 wp("transient", "delete", "--all");
-const down = await api("claim", { id: c1.data.id }, { cookie: starterCookie });
+const down = await api("claim", { id: c4.data.id }, { cookie: starterCookie });
 check(down.status === 503, `node down: the claim answers 503, nothing unlocks (${down.status})`);
+const downCancel = await api("cancel", { id: c4.data.id }, { cookie: starterCookie });
+const c4lock = wp("db", "query", `SELECT amount_lock FROM wp_nano_unlock_checkouts WHERE id='${c4.data.id}'`, "--skip-column-names");
+check(downCancel.status === 503 && c4lock === c4.data.amount, "node down: Cancel answers 503 and the amount stays held (a payment may be on its way)");
 await mock("/__down", { down: false });
 
 // Node load: many fast polls on one checkout share one scan every 3 s.
@@ -239,18 +304,57 @@ wp("transient", "delete", "--all");
 const tl = Date.now();
 let polls = 0;
 while (Date.now() - tl < 6000) {
-  await api("claim", { id: c1.data.id }, { cookie: starterCookie });
+  await api("claim", { id: c4.data.id }, { cookie: starterCookie });
   polls++;
   await sleep(100);
 }
 const calls = await mock("/__calls");
 check((calls.receivable ?? 0) <= 3 && (calls.account_history ?? 0) <= 3, `${polls} polls in 6 s made ${calls.receivable ?? 0} receivable + ${calls.account_history ?? 0} history calls`);
+await api("cancel", { id: c4.data.id }, { cookie: starterCookie });
 
-// Rate limit on checkouts: 20 per 10 minutes per address.
+// One visitor holds at most 10 amounts at once; and starts at most 20 checkouts per 10 minutes.
 wp("transient", "delete", "--all");
+const held = [];
+let attempts = 0;
+let capped = null;
+while (!capped && attempts < 15) {
+  attempts++;
+  const r = await api("checkout", { offer }, { cookie: starterCookie });
+  if (r.status === 200) held.push(r.data.id);
+  else capped = r;
+}
+check(held.length === 10 && capped?.status === 429 && /Too many checkouts are open/.test(capped.data.message), `one visitor holds at most 10 amounts at once (the #${attempts} is refused: ${capped?.data.message})`);
+for (const id of held) await api("cancel", { id }, { cookie: starterCookie });
 let firstRefused = 0;
-for (let i = 1; i <= 22 && !firstRefused; i++) if ((await api("checkout", { offer })).status === 429) firstRefused = i;
+while (!firstRefused && attempts < 25) {
+  attempts++;
+  const r = await api("checkout", { offer }, { cookie: starterCookie });
+  if (r.status === 429) firstRefused = attempts;
+  else await api("cancel", { id: r.data.id }, { cookie: starterCookie });
+}
 check(firstRefused === 21, `checkouts from one address are refused from #${firstRefused} (limit 20 per 10 minutes)`);
+wp("transient", "delete", "--all");
+
+// ---- 5b. Many readers at the same instant (MySQL, parallel requests) ---------------------------------
+console.log("\n— many readers at once");
+// Each request is its own visitor (the e2e helper takes the address from a test header). Post B costs
+// $0.05: Ӿ0.1. Its paid checkout freed Ӿ0.1, so the 60 readers must hold exactly Ӿ0.1000 to Ӿ0.1059.
+wp("db", "query", "DELETE FROM wp_nano_unlock_checkouts WHERE status <> 'paid'");
+const offerB = /data-nano-unlock-offer="([^"]+)"/.exec(await (await fetch(urlB)).text())?.[1];
+const burst = async (from, n) => Promise.all(Array.from({ length: n }, (_, i) => api("checkout", { offer: offerB }, { ip: `10.77.${Math.floor((from + i) / 250)}.${((from + i) % 250) + 1}` })));
+const first = await burst(0, 60);
+const got = first.filter((r) => r.status === 200).map((r) => r.data.amount);
+const want = Array.from({ length: 60 }, (_, k) => STEP(amountB, k));
+check(got.length === 60 && new Set(got).size === 60, `60 parallel checkouts: 60 answered, 60 different amounts (${got.length} answered, ${new Set(got).size} different)`);
+check([...got].sort().join() === [...want].sort().join(), "together they hold Ӿ0.1000 … Ӿ0.1059, with no gap and no tail");
+const second = await burst(60, 50);
+const got2 = second.filter((r) => r.status === 200).map((r) => r.data.amount);
+const busy = second.filter((r) => r.status === 503);
+check(got2.length === 40 && busy.length === 10 && new Set([...got, ...got2]).size === 100, `50 more at once: 40 get the last steps, 10 are told "busy" (${got2.length} + ${busy.length})`);
+check(busy.every((r) => /Try again in a moment/.test(r.data.message)), `the busy answer: "${busy[0]?.data.message}"`);
+const locks = wp("db", "query", "SELECT COUNT(DISTINCT amount_lock), COUNT(*), MAX(CAST(amount_lock AS DECIMAL(40,0))) FROM wp_nano_unlock_checkouts WHERE amount_lock IS NOT NULL", "--skip-column-names").split(/\s+/);
+check(locks[0] === "100" && locks[1] === "100" && locks[2] === STEP(amountB, 99), `the table holds 100 different amounts, the highest Ӿ0.1099 (${locks.join(" ")})`);
+wp("db", "query", "DELETE FROM wp_nano_unlock_checkouts WHERE status <> 'paid'");
 wp("transient", "delete", "--all");
 
 // ---- 6. The settings page -------------------------------------------------------------------------------
@@ -303,9 +407,10 @@ const again = await browser.newContext();
 const agp = await again.newPage();
 await agp.goto(urlA);
 check(!(await agp.content()).includes(SECRET_A) && (await agp.locator(".nano-unlock__button").count()) === 1, "on again: a new reader sees the paywall and the Unlock button");
+const checkoutAgain = agp.waitForResponse((r) => r.url().includes("nano-unlock/v1/checkout"));
 await agp.locator(".nano-unlock__button").click();
-await agp.locator(".nano-unlock__pay").waitFor();
-const amountAgain = /amount=(\d+)/.exec((await agp.locator(".nano-unlock__open").getAttribute("href")) ?? "")?.[1] ?? "";
+const amountAgain = (await (await checkoutAgain).json()).amount ?? "";
+await agp.locator(".nano-unlock__card").waitFor();
 await mock("/__pay", { to: SITE_ADDR, amount: amountAgain, from: BUYER2 });
 await agp.waitForURL(/nano_unlocked=/, { timeout: 15000 });
 check((await agp.content()).includes(SECRET_A), "on again: a new payment unlocks it");
@@ -318,8 +423,9 @@ await ap.goto(`${SITE}/wp-admin/post.php?post=${postB}&action=edit`);
 const canvas = ap.frameLocator('iframe[name="editor-canvas"]');
 await canvas.locator(".wp-block-nano-unlock-paywall").waitFor({ timeout: 60000 });
 await ap.keyboard.press("Escape");
+// A new site shows the editor's welcome guide once; Escape may already have closed it.
 const guide = ap.locator(".components-modal__screen-overlay button[aria-label='Close']");
-if (await guide.count()) await guide.first().click();
+if (await guide.count()) await guide.first().click({ timeout: 5000 }).catch(() => {});
 check((await canvas.locator(".nano-unlock-editor__label").textContent())?.includes("$0.05"), "the editor shows the block with its price");
 check((await canvas.locator(".wp-block-nano-unlock-paywall").innerText()).includes("the end of a story"), "the editor shows the stored paid part inside the block");
 check((await canvas.locator(".block-editor-warning").count()) === 0 && errors.length === 0, `no block warning and no script errors in the editor (${errors.join("; ")})`);

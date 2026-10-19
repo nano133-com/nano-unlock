@@ -9,6 +9,19 @@
 	var sprintf = i18n.sprintf;
 	var InnerBlocks = blockEditor.InnerBlocks;
 
+	// A price with its cents, as readers see it: "0.1" is "0.10".
+	function cents( price ) {
+		var m = /^(\d*)(?:\.(\d*))?$/.exec( price );
+		if ( ! m ) {
+			return price;
+		}
+		var frac = ( m[ 2 ] || '' ).slice( 0, 4 ).replace( /0+$/, '' );
+		while ( frac.length < 2 ) {
+			frac += '0';
+		}
+		return ( m[ 1 ] || '0' ) + '.' + frac;
+	}
+
 	blocks.registerBlockType( 'nano-unlock/paywall', {
 		edit: function ( props ) {
 			var price = props.attributes.price;
@@ -45,7 +58,7 @@
 					'p',
 					{ className: 'nano-unlock-editor__label' },
 					price
-						? sprintf( __( 'Paid part: readers pay $%s in Nano to read what is inside this box.', 'nano-unlock' ), price )
+						? sprintf( __( 'Paid part: readers pay $%s in Nano to read what is inside this box.', 'nano-unlock' ), cents( price ) )
 						: __( 'Paid part: readers pay the default price in Nano to read what is inside this box.', 'nano-unlock' )
 				),
 				el( InnerBlocks, { templateLock: false, template: [ [ 'core/paragraph', { placeholder: __( 'The paid part…', 'nano-unlock' ) } ] ] } )

@@ -222,7 +222,7 @@ final class Nano_Unlock_Settings {
 	}
 
 	/**
-	 * A price in dollars as a clean string, or null.
+	 * A price in dollars as a clean string with at least two decimals ("0.10", "1.00", "0.125"), or null.
 	 *
 	 * @param mixed $value The value.
 	 * @return string|null
@@ -239,7 +239,8 @@ final class Nano_Unlock_Settings {
 		if ( $usd < 0.01 || $usd > 1000 ) {
 			return null;
 		}
-		return rtrim( rtrim( number_format( $usd, 4, '.', '' ), '0' ), '.' );
+		// Money shows cents: "$0.10", never "$0.1". A third or fourth decimal stays when it counts.
+		return (string) preg_replace( '/(\.\d\d\d*?)0+$/', '$1', number_format( $usd, 4, '.', '' ) );
 	}
 
 	/**
@@ -348,7 +349,7 @@ final class Nano_Unlock_Settings {
 						<tr>
 							<td><?php echo esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), (int) $sale['paid_at'] ) ); ?></td>
 							<td><a href="<?php echo esc_url( get_permalink( (int) $sale['post_id'] ) ); ?>"><?php echo esc_html( get_the_title( (int) $sale['post_id'] ) ); ?></a></td>
-							<td>$<?php echo esc_html( rtrim( rtrim( (string) $sale['usd'], '0' ), '.' ) ); ?></td>
+							<td>$<?php echo esc_html( (string) ( null === self::price( $sale['usd'] ) ? $sale['usd'] : self::price( $sale['usd'] ) ) ); ?></td>
 							<td>Ӿ<?php echo esc_html( Nano_Unlock_Amount::to_xno_short( substr( (string) $sale['amount'], 0, -6 ) . '000000', 6 ) ); ?></td>
 							<td><code><?php echo esc_html( Nano_Unlock_Address::short( (string) $sale['payer'] ) ); ?></code></td>
 							<td><a href="<?php echo esc_url( 'https://nanexplorer.com/nano/block/' . $sale['hash'] ); ?>" target="_blank" rel="noopener noreferrer"><code><?php echo esc_html( substr( (string) $sale['hash'], 0, 10 ) ); ?>…</code></a></td>
@@ -358,7 +359,7 @@ final class Nano_Unlock_Settings {
 				</table>
 			<?php endif; ?>
 			<h2><?php esc_html_e( 'How payments are checked', 'nano-unlock' ); ?></h2>
-			<p><?php esc_html_e( 'Each checkout asks for a unique amount (the price plus a tiny tail in its last digits). This site asks the node above for a confirmed payment of exactly that amount to your address, sent after the checkout started. One payment unlocks one item, once. The reader keeps access on that browser through a signed cookie.', 'nano-unlock' ); ?></p>
+			<p><?php esc_html_e( 'Each checkout asks for a short amount of its own: the price in XNO, rounded up to 0.0001 XNO, plus 0.0001 XNO for each other open checkout that already holds that amount. This site asks the node above for a confirmed payment of exactly that amount to your address, sent after the checkout started. One payment unlocks one item, once. The reader keeps access on that browser through a signed cookie.', 'nano-unlock' ); ?></p>
 		</div>
 		<?php
 	}

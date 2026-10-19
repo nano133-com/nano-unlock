@@ -38,7 +38,16 @@ final class SettingsTest extends TestCase {
 
 	public function test_prices() {
 		$this->assertSame( '0.05', Nano_Unlock_Settings::price( '$0.05' ) );
-		$this->assertSame( '1', Nano_Unlock_Settings::price( '1.0000' ) );
+		// Money shows its cents: "$0.10" and "$1.00", never "$0.1" or "$1".
+		$this->assertSame( '0.10', Nano_Unlock_Settings::price( '0.1' ) );
+		$this->assertSame( '0.10', Nano_Unlock_Settings::price( '0.1000' ) );
+		$this->assertSame( '1.00', Nano_Unlock_Settings::price( '1.0000' ) );
+		$this->assertSame( '1.00', Nano_Unlock_Settings::price( '1' ) );
+		$this->assertSame( '1000.00', Nano_Unlock_Settings::price( '1000' ) );
+		// A third or fourth decimal stays when it counts.
+		$this->assertSame( '0.125', Nano_Unlock_Settings::price( '0.125' ) );
+		$this->assertSame( '0.0125', Nano_Unlock_Settings::price( '0.0125' ) );
+		$this->assertSame( '0.05', Nano_Unlock_Settings::price( '0.0500' ) );
 		$this->assertNull( Nano_Unlock_Settings::price( '0.001' ) );
 		$this->assertNull( Nano_Unlock_Settings::price( '5000' ) );
 		$this->assertNull( Nano_Unlock_Settings::price( 'free' ) );

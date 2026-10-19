@@ -12,13 +12,20 @@ defined( 'ABSPATH' ) || exit;
  * holds. Amounts stay decimal strings here, and the few operations the plugin
  * needs work on the digits, so no bcmath or gmp is required.
  *
- * Each checkout asks for a unique amount: the price, rounded up to 0.0001 XNO,
- * with a random tail in its last six digits (at most 0.000000000000000000000001 XNO).
- * The tail is how a payment is matched to its checkout without a memo field.
+ * Each checkout asks for a clean amount: the price, rounded up to a step of
+ * 0.0001 XNO. While another open checkout holds that exact amount, the next one
+ * asks for one step more, and so on (Nano_Unlock_Store::create). So an amount
+ * has at most four decimals, and a wallet that rounds to four decimals still
+ * sends it exactly.
  */
 final class Nano_Unlock_Amount {
 
 	const RAW_DIGITS = 30;
+
+	/**
+	 * A step is 0.0001 XNO: 10^26 raw.
+	 */
+	const STEP_DIGITS = 26;
 
 	/**
 	 * Sanity bounds for the XNO/USD rate: outside them, a price feed is wrong, not the market.
@@ -39,29 +46,38 @@ final class Nano_Unlock_Amount {
 		}
 		// A tiny allowance so float noise (0.01 / 0.5 * 10000 = 200.00000000000003) doesn't round up a whole step.
 		$steps = (int) ceil( ( $usd / $rate ) * 10000 - 1e-6 );
-		return (string) max( 1, $steps ) . str_repeat( '0', 26 );
+		return self::from_steps( max( 1, $steps ) );
 	}
 
 	/**
-	 * $raw with its last six digits replaced by $tail (1 to 999999).
+	 * A number of 0.0001 XNO steps, in raw.
 	 *
-	 * @param string $raw  A price from from_usd() (it ends in 26 zeros).
-	 * @param int    $tail The unique tail.
+	 * @param int $steps Steps (at most 2 × 10^9 for the largest price at the lowest rate).
 	 * @return string
 	 */
-	public static function with_tail( $raw, $tail ) {
-		$tail = max( 1, min( 999999, (int) $tail ) );
-		return substr( $raw, 0, -6 ) . str_pad( (string) $tail, 6, '0', STR_PAD_LEFT );
+	public static function from_steps( $steps ) {
+		return (string) (int) $steps . str_repeat( '0', self::STEP_DIGITS );
 	}
 
 	/**
-	 * A random unique amount for a price.
+	 * A clean amount (whole steps of 0.0001 XNO) plus $more steps.
 	 *
-	 * @param string $raw A price from from_usd().
+	 * @param string $raw  A clean amount, from from_usd().
+	 * @param int    $more Steps to add.
 	 * @return string
 	 */
-	public static function unique( $raw ) {
-		return self::with_tail( $raw, random_int( 1, 999999 ) );
+	public static function plus_steps( $raw, $more ) {
+		return self::from_steps( (int) substr( $raw, 0, -self::STEP_DIGITS ) + (int) $more );
+	}
+
+	/**
+	 * Whether $raw is a clean amount: whole steps of 0.0001 XNO, so at most four decimals.
+	 *
+	 * @param mixed $raw A value.
+	 * @return bool
+	 */
+	public static function is_clean( $raw ) {
+		return self::is_raw( $raw ) && strlen( $raw ) > self::STEP_DIGITS && str_repeat( '0', self::STEP_DIGITS ) === substr( $raw, -self::STEP_DIGITS );
 	}
 
 	/**
@@ -91,7 +107,7 @@ final class Nano_Unlock_Amount {
 	}
 
 	/**
-	 * A raw amount as XNO, all significant digits: "0.0123000000000000000000001234".
+	 * A raw amount as XNO, all significant digits: "0.1512" (and every digit of an older amount with a tail).
 	 *
 	 * @param string $raw An amount.
 	 * @return string

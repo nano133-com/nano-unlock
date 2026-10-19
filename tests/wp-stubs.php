@@ -17,7 +17,7 @@ define( 'DAY_IN_SECONDS', 86400 );
 define( 'COOKIEPATH', '/' );
 define( 'COOKIE_DOMAIN', '' );
 define( 'ARRAY_A', 'ARRAY_A' );
-define( 'NANO_UNLOCK_VERSION', '0.1.1' );
+define( 'NANO_UNLOCK_VERSION', '0.1.2' );
 define( 'NANO_UNLOCK_DIR', dirname( __DIR__ ) . '/nano-unlock/' );
 define( 'NANO_UNLOCK_URL', 'https://example.test/wp-content/plugins/nano-unlock/' );
 define( 'NANO_UNLOCK_FILE', NANO_UNLOCK_DIR . 'nano-unlock.php' );
@@ -115,13 +115,78 @@ class WP_REST_Request {
 }
 
 /**
- * The checkouts table, in memory. It understands only the queries Nano_Unlock_Store makes.
+ * The checkouts table in SQLite, standing in for MySQL behind $wpdb: the same columns and the
+ * same unique keys, so the store's own SQL runs for real (in memory, or in a file that several
+ * processes share for the parallel test). Values come back as strings, as from $wpdb.
  */
 class Nano_Unlock_Test_Wpdb {
-	public $prefix = 'wp_';
-	public $rows   = array();
+	public $prefix     = 'wp_';
+	public $last_error = '';
 	/** When true, marking a checkout paid fails like a database error. */
 	public $fail_mark_paid = false;
+	/** Inserts the database refused (a unique key, usually). */
+	public $refused = 0;
+	/** Called before each insert with the row (a test can play a rival reader there). */
+	public $before_insert = null;
+	/** @var PDO */
+	public $pdo;
+
+	public function __construct( $file = ':memory:' ) {
+		$this->pdo = new PDO(
+			'sqlite:' . $file,
+			null,
+			null,
+			array(
+				PDO::ATTR_ERRMODE           => PDO::ERRMODE_SILENT,
+				PDO::ATTR_STRINGIFY_FETCHES => true,
+				PDO::ATTR_TIMEOUT           => 60,
+			)
+		);
+		$this->pdo->exec( 'PRAGMA busy_timeout = 60000' );
+		if ( ':memory:' !== $file ) {
+			$this->pdo->exec( 'PRAGMA journal_mode = WAL' );
+		}
+		$this->pdo->exec(
+			'CREATE TABLE IF NOT EXISTS wp_nano_unlock_checkouts (
+				id TEXT NOT NULL PRIMARY KEY,
+				item TEXT NOT NULL,
+				post_id INTEGER NOT NULL DEFAULT 0,
+				usd TEXT NOT NULL DEFAULT \'0\',
+				amount TEXT NOT NULL,
+				amount_lock TEXT NULL UNIQUE,
+				address TEXT NOT NULL,
+				starter TEXT NOT NULL,
+				visitor TEXT NULL,
+				status TEXT NOT NULL DEFAULT \'waiting\',
+				created_at INTEGER NOT NULL,
+				expires_at INTEGER NOT NULL,
+				hash TEXT NULL UNIQUE,
+				payer TEXT NULL,
+				paid_at INTEGER NULL
+			)'
+		);
+	}
+
+	/** Every row, by id (read only: tests change rows with set()). */
+	public function __get( $name ) {
+		if ( 'rows' !== $name ) {
+			return null;
+		}
+		$rows = array();
+		foreach ( $this->pdo->query( 'SELECT * FROM wp_nano_unlock_checkouts' )->fetchAll( PDO::FETCH_ASSOC ) as $row ) {
+			$rows[ $row['id'] ] = $row;
+		}
+		return $rows;
+	}
+
+	/** Changes a row's fields, as a test needs (an older payment, an older checkout). */
+	public function set( $id, array $fields ) {
+		$sets = array();
+		foreach ( $fields as $k => $v ) {
+			$sets[] = $k . ' = ' . ( null === $v ? 'NULL' : $this->pdo->quote( (string) $v ) );
+		}
+		$this->pdo->exec( 'UPDATE wp_nano_unlock_checkouts SET ' . implode( ', ', $sets ) . ' WHERE id = ' . $this->pdo->quote( $id ) );
+	}
 
 	public function suppress_errors( $suppress = true ) {
 		return false;
@@ -129,83 +194,83 @@ class Nano_Unlock_Test_Wpdb {
 	public function get_charset_collate() {
 		return '';
 	}
+	/** Like WordPress: %i an identifier, %s a quoted string, %d an integer, %f a float, %% a percent sign. */
 	public function prepare( $sql, ...$args ) {
-		// An identifier (%i, the table name) goes into the SQL, as WordPress does; the values stay apart.
-		if ( false !== strpos( $sql, '%i' ) ) {
-			$sql = str_replace( '%i', '`' . array_shift( $args ) . '`', $sql );
+		if ( 1 === count( $args ) && is_array( $args[0] ) ) {
+			$args = $args[0];
 		}
-		return array(
-			'sql'  => $sql,
-			'args' => $args,
+		$pdo = $this->pdo;
+		return preg_replace_callback(
+			'/%(%|i|s|d|f)/',
+			function ( $m ) use ( &$args, $pdo ) {
+				if ( '%' === $m[1] ) {
+					return '%';
+				}
+				$v = array_shift( $args );
+				switch ( $m[1] ) {
+					case 'i':
+						return '`' . str_replace( '`', '``', (string) $v ) . '`';
+					case 'd':
+						return (string) (int) $v;
+					case 'f':
+						return (string) (float) $v;
+				}
+				return $pdo->quote( (string) $v );
+			},
+			$sql
 		);
 	}
 	public function insert( $table, $data ) {
-		foreach ( $this->rows as $row ) {
-			if ( null !== $row['amount_lock'] && $row['amount_lock'] === $data['amount_lock'] ) {
-				return false;
-			}
+		if ( $this->before_insert ) {
+			call_user_func( $this->before_insert, $data );
 		}
-		$this->rows[ $data['id'] ] = array_merge(
-			array(
-				'hash'    => null,
-				'payer'   => null,
-				'paid_at' => null,
-			),
-			$data
-		);
+		$cols = array_keys( $data );
+		$stmt = $this->pdo->prepare( 'INSERT INTO ' . $table . ' (' . implode( ', ', $cols ) . ') VALUES (' . implode( ', ', array_fill( 0, count( $cols ), '?' ) ) . ')' );
+		if ( ! $stmt || ! $stmt->execute( array_values( $data ) ) ) {
+			$this->last_error = $stmt ? (string) $stmt->errorInfo()[2] : 'prepare failed';
+			$this->refused++;
+			return false;
+		}
+		$this->last_error = '';
 		return 1;
 	}
-	public function query( $q ) {
-		$sql = is_array( $q ) ? $q['sql'] : (string) $q;
-		if ( false !== strpos( $sql, "SET status = 'paid'" ) ) {
-			if ( $this->fail_mark_paid ) {
-				return false;
-			}
-			list( $hash, $payer, $paid_at, $id ) = $q['args'];
-			foreach ( $this->rows as $row ) {
-				if ( $row['hash'] === $hash ) {
-					return false;
-				}
-			}
-			if ( ! isset( $this->rows[ $id ] ) || 'waiting' !== $this->rows[ $id ]['status'] ) {
-				return 0;
-			}
-			$this->rows[ $id ] = array_merge(
-				$this->rows[ $id ],
-				array(
-					'status'  => 'paid',
-					'hash'    => $hash,
-					'payer'   => $payer,
-					'paid_at' => (string) $paid_at,
-				)
-			);
-			return 1;
+	public function query( $sql ) {
+		if ( $this->fail_mark_paid && false !== strpos( $sql, "SET status = 'paid'" ) ) {
+			return false;
 		}
-		return 0;
-	}
-	public function get_row( $q, $output = null ) {
-		$id = $q['args'][0];
-		return isset( $this->rows[ $id ] ) ? $this->rows[ $id ] : null;
-	}
-	public function get_var( $q ) {
-		foreach ( $this->rows as $row ) {
-			if ( $row['hash'] === $q['args'][0] ) {
-				return $row['id'];
-			}
+		$n = $this->pdo->exec( $sql );
+		if ( false === $n ) {
+			$this->last_error = (string) $this->pdo->errorInfo()[2];
+			return false;
 		}
-		return null;
+		return $n;
 	}
-	public function get_col( $q ) {
-		$out = array();
-		foreach ( $this->rows as $row ) {
-			if ( 'waiting' === $row['status'] ) {
-				$out[] = $row['amount'];
-			}
+	private function rows_of( $sql ) {
+		$stmt = $this->pdo->query( $sql );
+		if ( ! $stmt ) {
+			$this->last_error = (string) $this->pdo->errorInfo()[2];
+			return array();
 		}
-		return $out;
+		return $stmt->fetchAll( PDO::FETCH_ASSOC );
 	}
-	public function get_results( $q, $output = null ) {
-		return array();
+	public function get_row( $sql, $output = null ) {
+		$rows = $this->rows_of( $sql );
+		return $rows ? $rows[0] : null;
+	}
+	public function get_var( $sql ) {
+		$rows = $this->rows_of( $sql );
+		return $rows ? reset( $rows[0] ) : null;
+	}
+	public function get_col( $sql ) {
+		return array_map(
+			function ( $row ) {
+				return reset( $row );
+			},
+			$this->rows_of( $sql )
+		);
+	}
+	public function get_results( $sql, $output = null ) {
+		return $this->rows_of( $sql );
 	}
 }
 
@@ -324,6 +389,9 @@ function rest_url( $path = '' ) {
 }
 function home_url( $path = '' ) {
 	return 'https://example.test' . $path;
+}
+function wp_hash( $data, $scheme = 'auth' ) {
+	return hash_hmac( 'md5', (string) $data, 'test salt ' . $scheme );
 }
 function wp_create_nonce( $action ) {
 	return 'nonce';
