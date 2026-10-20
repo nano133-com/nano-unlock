@@ -29,7 +29,7 @@
       "step": "setSiteOptions",
       "options": {
         "nano_unlock_settings": {
-          "address": "nano_3khpd7q3dzrbcae18bmpidbcrj5mn1n1jnkidup7acocia1b966y88czr5if",
+          "address": "nano_3so8hwtch1uh7khux64osg3jp4pf1me7td3jct1ed4zf19437j4guuxwwb9o",
           "usd": "0.01",
           "node": "https://node.nano133.com/rpc",
           "node2": ""
