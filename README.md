@@ -213,8 +213,8 @@ prices unreceived can hide a new payment until the wallet receives.
 Amounts have at most four decimals, because some wallets round to four.
 Before 0.2.0 amounts had more digits, and Cake Wallet cut one to four
 decimals, so that payment did not match. Version 0.2.0 was tested with the
-mock node only: no wallet app has paid one of its amounts yet, and Cake
-Wallet itself was not tested with any version.
+mock node and with one real payment of 0.1468 XNO from a wallet app on
+2026-10-19. Cake Wallet itself was not tested with the plugin yet.
 
 ### Node load
 

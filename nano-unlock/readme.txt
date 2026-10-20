@@ -49,7 +49,7 @@ Each checkout asks for an exact amount with at most four decimals, for example 0
 
 So a wallet that shows or rounds amounts to four decimals still sends the exact amount. Some wallets cut amounts to four decimals: before version 0.2.0, amounts had more digits, and Cake Wallet cut one, so that payment did not match. The QR code and "Open in wallet" fill the amount in, and under "Details" it has a Copy button. A payment of any other amount does not match and unlocks nothing; you see it in your wallet and can refund it.
 
-Which wallets were checked: version 0.2.0 was tested with a mock node only. No wallet app has paid one of its four-decimal amounts yet, and Cake Wallet itself was not tested with any version.
+Which wallets were checked: version 0.2.0 was tested with a mock node and with one real payment of 0.1468 XNO from a wallet app on 2026-10-19. Cake Wallet itself was not tested with the plugin yet.
 
 = What does Cancel do? =
 
